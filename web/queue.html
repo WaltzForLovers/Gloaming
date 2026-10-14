@@ -25,6 +25,11 @@
     <div class="queue-body">
       <h1>Очередь</h1>
       <p class="summary"></p>
+      <p class="rhythm-line"></p>
+      <p class="letter" hidden></p>
+      <form class="rhythm">
+        <label>Минут в день<input name="daily" inputmode="numeric" placeholder="40" autocomplete="off"></label>
+      </form>
       <form class="time">
         <label>Часы<input name="hours" inputmode="numeric" value="1"></label>
         <label>Минуты<input name="minutes" inputmode="numeric" value="30"></label>
@@ -42,6 +47,10 @@
         </div>
       </section>
       <ol class="queue"></ol>
+      <section class="picks" hidden>
+        <h2>Похожее</h2>
+        <div class="pick-list"></div>
+      </section>
     </div>
     <section class="empty-gate">
       <div class="empty-card">

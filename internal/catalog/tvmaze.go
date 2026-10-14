@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 type HTTPClient struct {
 	baseURL string
 	http    *http.Client
+	cache   Cache
 }
 
 func NewHTTPClient(baseURL string) *HTTPClient {
@@ -21,6 +21,11 @@ func NewHTTPClient(baseURL string) *HTTPClient {
 		baseURL: strings.TrimRight(baseURL, "/"),
 		http:    &http.Client{},
 	}
+}
+
+func (c *HTTPClient) WithCache(cache Cache) *HTTPClient {
+	c.cache = cache
+	return c
 }
 
 func (c *HTTPClient) SearchShows(ctx context.Context, query string) ([]Show, error) {
@@ -45,13 +50,19 @@ func (c *HTTPClient) SearchShows(ctx context.Context, query string) ([]Show, err
 func (c *HTTPClient) Episodes(ctx context.Context, showID int) ([]Episode, error) {
 	endpoint := fmt.Sprintf("%s/shows/%d/episodes", c.baseURL, showID)
 	var payload []struct {
-		Runtime *int `json:"runtime"`
+		Name    string `json:"name"`
+		Season  int    `json:"season"`
+		Number  int    `json:"number"`
+		Runtime *int   `json:"runtime"`
 	}
 	if err := c.get(ctx, endpoint, &payload); err != nil {
 		return nil, err
 	}
 	episodes := make([]Episode, len(payload))
 	for i, item := range payload {
+		episodes[i].Name = item.Name
+		episodes[i].Season = item.Season
+		episodes[i].Number = item.Number
 		if item.Runtime != nil {
 			episodes[i].Runtime = *item.Runtime
 		}
@@ -60,23 +71,12 @@ func (c *HTTPClient) Episodes(ctx context.Context, showID int) ([]Episode, error
 }
 
 func (c *HTTPClient) get(ctx context.Context, endpoint string, dest any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	body, status, err := loadBody(ctx, c.http, c.cache, "Gloaming/1.0", endpoint)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Gloaming/1.0")
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("catalog status %d", resp.StatusCode)
+	if status != http.StatusOK {
+		return fmt.Errorf("catalog status %d", status)
 	}
 	if err := json.Unmarshal(body, dest); err != nil {
 		return fmt.Errorf("catalog json: %w", err)
@@ -85,11 +85,12 @@ func (c *HTTPClient) get(ctx context.Context, endpoint string, dest any) error {
 }
 
 type showJSON struct {
-	ID             int     `json:"id"`
-	Name           string  `json:"name"`
-	Premiered      *string `json:"premiered"`
-	Runtime        *int    `json:"runtime"`
-	AverageRuntime *int    `json:"averageRuntime"`
+	ID             int      `json:"id"`
+	Name           string   `json:"name"`
+	Premiered      *string  `json:"premiered"`
+	Runtime        *int     `json:"runtime"`
+	AverageRuntime *int     `json:"averageRuntime"`
+	Genres         []string `json:"genres"`
 	Image          *struct {
 		Medium string `json:"medium"`
 	} `json:"image"`
@@ -109,7 +110,19 @@ func (s showJSON) toShow() Show {
 	if s.Image != nil {
 		show.Poster = s.Image.Medium
 	}
+	show.Genres = s.Genres
 	return show
+}
+
+func (c *HTTPClient) Genres(ctx context.Context, showID int) ([]string, error) {
+	var payload struct {
+		Genres []string `json:"genres"`
+	}
+	endpoint := fmt.Sprintf("%s/shows/%d", c.baseURL, showID)
+	if err := c.get(ctx, endpoint, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Genres, nil
 }
 
 func yearOf(premiered string) int {

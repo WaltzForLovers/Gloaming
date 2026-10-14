@@ -59,6 +59,7 @@ function mapCard(card) {
     average: card.averageMinutes,
     kind: card.kind || "",
     poster: card.poster || "",
+    assembling: Boolean(card.assembling),
     about: "",
   };
 }
@@ -67,6 +68,12 @@ function mapItem(item) {
   const card = mapCard(item);
   card.id = item.id;
   card.titleId = item.titleId;
+  card.seasonId = item.seasonId || 0;
+  card.seasonNumber = item.seasonNumber || 0;
+  card.totalEpisodes = item.seasonEpisodes || item.episodeCount;
+  card.remainingEpisodes = item.remainingEpisodes;
+  card.remainingMinutes = item.remainingMinutes || 0;
+  if (item.remainingEpisodes != null) card.episodes = item.remainingEpisodes;
   return card;
 }
 
@@ -110,6 +117,51 @@ function formatMinutes(total) {
   return minutes ? hours + " ч " + minutes + " мин" : hours + " ч";
 }
 
+function finishOffset(remaining, daily) {
+  if (remaining <= 0 || daily <= 0) return null;
+  return Math.ceil(remaining / daily) - 1;
+}
+
+function finishWhen(offset) {
+  if (offset === 0) return "сегодня";
+  if (offset === 1) return "завтра";
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + offset);
+  const options = { day: "numeric", month: "long" };
+  if (date.getFullYear() !== new Date().getFullYear()) options.year = "numeric";
+  return date.toLocaleDateString("ru-RU", options);
+}
+
+function rhythmText(rows, daily) {
+  const current = rows.find((item) => (item.remainingMinutes || 0) > 0);
+  const queueMinutes = rows.reduce((sum, item) => sum + Math.max(0, item.remainingMinutes || 0), 0);
+  const unknown = rows.some((item) => (item.remainingMinutes || 0) <= 0 && (item.episodes || 0) > 0);
+  if (!current) {
+    if (rows.length && rows.every((item) => (item.episodes || 0) === 0)) return "В очереди всё уже отмечено.";
+    return "В очереди пока не из чего считать ритм.";
+  }
+  if (daily <= 0) return "Сколько минут в день смотрите? Покажу, когда кончится текущий сезон и вся очередь.";
+  const tail = unknown ? " Без длительности в расчёт не берём." : "";
+  return "По " + daily + " мин в день «" + current.name + "» кончится " + finishWhen(finishOffset(current.remainingMinutes, daily)) + ". Вся очередь — " + finishWhen(finishOffset(queueMinutes, daily)) + "." + tail;
+}
+
+function readCount(value) {
+  const text = value.trim();
+  if (!/^\d+$/.test(text)) return null;
+  const number = Number(text);
+  if (!Number.isInteger(number)) return null;
+  return number;
+}
+
+function readDaily(form) {
+  const raw = form.daily.value.trim();
+  if (raw === "") return 0;
+  const minutes = Number(raw);
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) return null;
+  return minutes;
+}
+
 function seriesWord(n) {
   return plural(n, "серия", "серии", "серий");
 }
@@ -129,7 +181,9 @@ function mountDetail(root, item, queued) {
       <div class="detail-copy">
         <p class="facts"></p>
         <p class="blurb"></p>
-        ${queued ? '<span class="queued">В очереди</span>' : '<button class="primary" type="button" data-add="">В очередь</button>'}
+        ${item.kind === "series"
+          ? '<a class="primary" href="title.html?id=' + item.id + '">Сезоны</a>'
+          : (queued ? '<span class="queued">В очереди</span>' : '<button class="primary" type="button" data-add="">В очередь</button>')}
       </div>
     </div>`;
   root.querySelector(".detail-poster").append(posterNode(item, "poster-lg"));
@@ -225,14 +279,69 @@ function bindAuth(mode) {
       showError("Пароль: не короче 8 символов.");
       return;
     }
+    const email = form.email ? form.email.value.trim() : "";
+    if (mode === "register" && (!email.includes("@") || email.length < 6)) {
+      showError("Укажите адрес почты.");
+      return;
+    }
     const button = form.querySelector("button");
     setBusy(button, true);
     try {
       if (mode === "register") {
-        await api("/api/register", { method: "POST", body: { username, password } });
+        await api("/api/register", { method: "POST", body: { username, password, email } });
       }
       await api("/api/login", { method: "POST", body: { username, password } });
       location.href = "queue.html";
+    } catch (err) {
+      setBusy(button, false);
+      showError(err.message);
+    }
+  });
+}
+
+function bindForgot() {
+  const form = document.querySelector("form");
+  const notice = document.querySelector(".notice");
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearError();
+    notice.hidden = true;
+    const email = form.email.value.trim();
+    if (!email.includes("@") || email.length < 6) {
+      showError("Укажите адрес почты.");
+      return;
+    }
+    const button = form.querySelector("button");
+    setBusy(button, true);
+    try {
+      const data = await api("/api/password/forgot", { method: "POST", body: { email } });
+      notice.textContent = data.message || "Если такой адрес есть, письмо уже отправлено.";
+      notice.hidden = false;
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setBusy(button, false);
+    }
+  });
+}
+
+function bindReset() {
+  const form = document.querySelector("form");
+  const token = new URLSearchParams(location.search).get("token") || "";
+  if (!token) showError("Ссылка устарела. Запросите новую.");
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearError();
+    const password = form.password.value;
+    if (Array.from(password).length < 8) {
+      showError("Пароль: не короче 8 символов.");
+      return;
+    }
+    const button = form.querySelector("button");
+    setBusy(button, true);
+    try {
+      await api("/api/password/reset", { method: "POST", body: { token, password } });
+      location.href = "login.html";
     } catch (err) {
       setBusy(button, false);
       showError(err.message);
@@ -244,6 +353,9 @@ function bindSearch() {
   const form = document.querySelector(".search-form");
   const hint = document.querySelector(".hint");
   const hits = document.querySelector(".hits");
+  const manualForm = document.querySelector(".manual");
+  const manualLead = document.querySelector(".manual-lead");
+  const manualOpen = document.querySelector(".manual-open");
   let openId = "";
   let timer = 0;
   let seq = 0;
@@ -303,6 +415,71 @@ function bindSearch() {
     openId = willOpen ? id : "";
   });
 
+  function hideManual() {
+    manualForm.hidden = true;
+    manualOpen.hidden = true;
+  }
+
+  function showManual(lead) {
+    manualLead.textContent = lead;
+    manualForm.hidden = false;
+    manualOpen.hidden = true;
+  }
+
+  function offerManual() {
+    if (!manualForm.hidden) {
+      manualOpen.hidden = true;
+      return;
+    }
+    manualOpen.hidden = false;
+  }
+
+  manualOpen.addEventListener("click", () => {
+    showManual("Год, число серий и минуты одной серии. Фильм — это одна серия.");
+  });
+
+  manualForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearError();
+    const name = form.q.value.trim();
+    const year = readCount(manualForm.year.value);
+    const episodes = readCount(manualForm.episodes.value);
+    const average = readCount(manualForm.average.value);
+    if (Array.from(name).length < 2 || Array.from(name).length > 120) {
+      showError("Название: от 2 до 120 символов.");
+      return;
+    }
+    if (year == null || year < 1888 || year > 2100) {
+      showError("Год: от 1888 до 2100.");
+      return;
+    }
+    if (episodes == null || episodes < 1 || episodes > 500) {
+      showError("Число серий: от 1 до 500.");
+      return;
+    }
+    if (average == null || average < 1 || average > 1440) {
+      showError("Длительность серии: от 1 до 1440 минут.");
+      return;
+    }
+    const button = manualForm.querySelector("button");
+    setBusy(button, true);
+    try {
+      const card = await api("/api/titles", {
+        method: "POST",
+        body: { name, year, episodeCount: episodes, averageMinutes: average },
+      });
+      const item = mapCard(card);
+      hits.prepend(renderHit(item, queued.has(item.titleId), 0));
+      manualForm.reset();
+      manualForm.hidden = true;
+      manualOpen.hidden = false;
+    } catch (err) {
+      if (!gone(err)) showError(err.message);
+    } finally {
+      setBusy(button, false);
+    }
+  });
+
   function markQueued(button) {
     const mark = document.createElement("span");
     mark.className = "queued";
@@ -316,6 +493,7 @@ function bindSearch() {
     if (Array.from(query).length < 2) {
       hits.replaceChildren();
       openId = "";
+      hideManual();
       if (fromSubmit) {
         hint.hidden = true;
         showError("Введите не меньше двух символов.");
@@ -328,6 +506,7 @@ function bindSearch() {
     }
     clearError();
     hint.hidden = true;
+    hideManual();
     showSkeletons();
     const button = form.querySelector("button");
     if (fromSubmit) setBusy(button, true);
@@ -340,10 +519,21 @@ function bindSearch() {
         const item = mapCard(card);
         hits.append(renderHit(item, queued.has(item.titleId), index));
       });
+      if ((data.titles || []).length) offerManual();
+      else showManual("В каталоге такого нет. Год, число серий и минуты одной серии. Фильм — это одна серия.");
     } catch (err) {
       if (token !== seq) return;
       hits.replaceChildren();
-      if (!gone(err)) showError(err.message);
+      if (gone(err)) return;
+      if (err.code === "TITLE_NOT_FOUND") {
+        clearError();
+        showManual("В каталоге такого нет. Год, число серий и минуты одной серии. Фильм — это одна серия.");
+        return;
+      }
+      showError(err.message);
+      if (err.code === "CATALOG_UNAVAILABLE") {
+        showManual("Каталог не ответил. Карточку можно завести самим: год, число серий и минуты одной серии.");
+      }
     } finally {
       if (token === seq && fromSubmit) setBusy(button, false);
     }
@@ -375,7 +565,9 @@ function bindSearch() {
     hit.querySelector(".fold").inert = true;
     hit.querySelector(".hit-main").prepend(posterNode(item));
     hit.querySelector(".hit-name").textContent = item.name;
-    hit.querySelector(".hit-meta").textContent = item.year + " · " + kindOf(item);
+    hit.querySelector(".hit-meta").textContent = item.assembling
+      ? (item.year ? item.year + " · " : "") + "собирается"
+      : item.year + " · " + kindOf(item);
     mountDetail(hit.querySelector(".fold-inner"), item, isQueued);
     return hit;
   }
@@ -386,6 +578,11 @@ function bindQueue() {
   const list = document.querySelector(".queue");
   const plan = document.querySelector(".plan");
   const form = document.querySelector(".time");
+  const rhythmForm = document.querySelector(".rhythm");
+  const rhythmLine = document.querySelector(".rhythm-line");
+  const letterLine = document.querySelector(".letter");
+  const picks = document.querySelector(".picks");
+  const pickList = document.querySelector(".pick-list");
   const summary = document.querySelector(".summary");
   const shelf = document.querySelector(".shelf");
   const startOpen = document.querySelector(".start-open");
@@ -399,9 +596,14 @@ function bindQueue() {
   let undone = null;
   let busy = false;
   let planTimer = 0;
+  let paceTimer = 0;
+  let paceToken = 0;
+  let dailyMinutes = 0;
+  let letterText = "";
+  let suggestions = [];
 
   function summaryText(rows) {
-    const minutes = rows.reduce((sum, item) => sum + (known(item) ? item.episodes * item.average : 0), 0);
+    const minutes = rows.reduce((sum, item) => sum + (item.remainingMinutes || (known(item) ? item.episodes * item.average : 0)), 0);
     const unknown = rows.filter((item) => !known(item)).length;
     let text = rows.length + " " + plural(rows.length, "название", "названия", "названий");
     if (minutes > 0) text += " · " + formatMinutes(minutes);
@@ -423,6 +625,21 @@ function bindQueue() {
   function render(skipFlipId) {
     page.classList.toggle("is-empty", items.length === 0);
     summary.textContent = items.length ? summaryText(items) : "";
+    rhythmLine.textContent = items.length ? rhythmText(items, dailyMinutes) : "";
+    if (letterLine) {
+      letterLine.hidden = letterText === "";
+      letterLine.textContent = letterText ? "Письмо: " + letterText : "";
+    }
+    if (picks && pickList) {
+      pickList.replaceChildren();
+      suggestions.forEach((card) => {
+        const link = document.createElement("a");
+        link.href = "title.html?id=" + card.id;
+        link.textContent = card.name + (card.year ? " · " + card.year : "");
+        pickList.append(link);
+      });
+      picks.hidden = suggestions.length === 0;
+    }
     list.replaceChildren();
     items.forEach((item, index) => {
       const row = document.createElement("li");
@@ -430,8 +647,10 @@ function bindQueue() {
       if (!known(item)) row.classList.add("unknown");
       if (String(item.id) === String(skipFlipId)) row.classList.add("lifting");
       row.dataset.id = item.id;
-      const total = item.episodes * item.average;
-      const length = known(item) ? formatMinutes(total) : "длительность неизвестна";
+      const total = item.remainingMinutes || item.episodes * item.average;
+      const length = total > 0 ? formatMinutes(total) : (item.totalEpisodes > 0 && item.episodes === 0 ? "все серии отмечены" : "длительность неизвестна");
+      const kind = item.kind === "series" && item.seasonNumber ? "сезон " + item.seasonNumber : kindOf(item);
+      const left = item.kind === "series" && item.totalEpisodes ? " · осталось " + item.episodes + " из " + item.totalEpisodes : "";
       row.innerHTML = `
         <button class="grip" type="button" aria-label="Перетащить"><span></span></button>
         <div>
@@ -445,7 +664,7 @@ function bindQueue() {
         </div>`;
       row.querySelector(".grip").after(posterNode(item));
       row.querySelector(".hit-name").textContent = item.name;
-      row.querySelector(".hit-meta").textContent = (index + 1) + " · " + kindOf(item) + " · " + length;
+      row.querySelector(".hit-meta").textContent = (index + 1) + " · " + kind + " · " + length + left;
       row.querySelector('[data-dir="up"]').disabled = index === 0;
       row.querySelector('[data-dir="down"]').disabled = index === items.length - 1;
       list.append(row);
@@ -540,7 +759,26 @@ function bindQueue() {
   async function reload() {
     const data = await api("/api/queue");
     items = (data.items || []).map(mapItem);
+    letterText = data.letter || "";
+    suggestions = data.suggestions || [];
+    if (document.activeElement !== rhythmForm.daily) {
+      dailyMinutes = data.rhythm ? data.rhythm.dailyMinutes || 0 : 0;
+      rhythmForm.daily.value = dailyMinutes > 0 ? String(dailyMinutes) : "";
+    }
     render();
+  }
+
+  async function savePace(value) {
+    const token = ++paceToken;
+    try {
+      const saved = await api("/api/rhythm", { method: "PATCH", body: { dailyMinutes: value } });
+      if (token !== paceToken) return;
+      dailyMinutes = saved.dailyMinutes || 0;
+      await reload();
+    } catch (err) {
+      if (token !== paceToken || gone(err)) return;
+      showError(err.message);
+    }
   }
 
   async function shift(id, direction, steps) {
@@ -560,7 +798,7 @@ function bindQueue() {
   }
 
   function showUndo(item, index) {
-    undone = { titleId: item.titleId, index, name: item.name };
+    undone = { titleId: item.titleId, seasonId: item.seasonId, index, name: item.name };
     const toast = document.querySelector(".undo");
     toast.querySelector("p").textContent = "Убрали «" + item.name + "»";
     toast.inert = false;
@@ -676,6 +914,31 @@ function bindQueue() {
       if (!gone(err)) showError(err.message);
     }
   }
+
+  rhythmForm.addEventListener("input", () => {
+    clearTimeout(paceTimer);
+    const value = readDaily(rhythmForm);
+    if (value == null) {
+      rhythmLine.textContent = "Укажите от 0 до 1440 минут в день.";
+      return;
+    }
+    dailyMinutes = value;
+    rhythmLine.textContent = items.length ? rhythmText(items, dailyMinutes) : "";
+    paceTimer = setTimeout(() => savePace(value), 400);
+  });
+
+  rhythmForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    clearTimeout(paceTimer);
+    const value = readDaily(rhythmForm);
+    if (value == null) {
+      rhythmLine.textContent = "Укажите от 0 до 1440 минут в день.";
+      return;
+    }
+    dailyMinutes = value;
+    rhythmLine.textContent = items.length ? rhythmText(items, dailyMinutes) : "";
+    savePace(value);
+  });
 
   form.addEventListener("input", () => {
     summary.textContent = items.length ? summaryText(items) : "";
@@ -839,7 +1102,7 @@ function bindQueue() {
     hideUndo();
     busy = true;
     try {
-      const created = await api("/api/queue", { method: "POST", body: { titleId: snapshot.titleId } });
+      const created = await api("/api/queue", { method: "POST", body: snapshot.seasonId ? { seasonId: snapshot.seasonId } : { titleId: snapshot.titleId } });
       const steps = created.position - 1 - snapshot.index;
       if (steps > 0) await shift(created.id, "up", steps);
       else await reload();
@@ -907,6 +1170,14 @@ async function boot() {
     bindAuth(page);
     return;
   }
+  if (page === "forgot") {
+    bindForgot();
+    return;
+  }
+  if (page === "reset") {
+    bindReset();
+    return;
+  }
   let user;
   try {
     user = await api("/api/me");
@@ -921,6 +1192,116 @@ async function boot() {
   paintChrome(user);
   if (page === "search") bindSearch();
   if (page === "queue") bindQueue();
+  if (page === "title") bindTitle();
+}
+
+function bindTitle() {
+  const params = new URLSearchParams(location.search);
+  const id = params.get("id");
+  const head = document.querySelector(".title-head");
+  const seasons = document.querySelector(".seasons");
+  if (!id) {
+    showError("Не удалось прочитать запрос.");
+    return;
+  }
+
+  let timer = 0;
+  let tries = 0;
+
+  async function load() {
+    clearTimeout(timer);
+    const [card, queue] = await Promise.all([api("/api/titles/" + id), api("/api/queue")]);
+    const queuedSeasons = new Set((queue.items || []).map((item) => item.seasonId));
+    head.replaceChildren();
+    const poster = document.createElement("div");
+    poster.append(posterNode(mapCard(card), "poster-lg"));
+    const copy = document.createElement("div");
+    const title = document.createElement("h1");
+    title.textContent = card.name;
+    const facts = document.createElement("p");
+    facts.className = "facts";
+    facts.textContent = (card.year || "") + " · " + runtimeLine(mapCard(card));
+    copy.append(title, facts);
+    if (card.assembling) {
+      const note = document.createElement("p");
+      note.className = "assembling";
+      note.textContent = "Собирается. Серии появятся сами.";
+      copy.append(note);
+      if (tries < 20) {
+        tries += 1;
+        timer = setTimeout(() => {
+          load().catch((err) => {
+            if (!gone(err)) showError(err.message);
+          });
+        }, 1500);
+      }
+    } else {
+      tries = 0;
+    }
+    head.append(poster, copy);
+
+    seasons.replaceChildren();
+    (card.seasons || []).forEach((season) => {
+      const block = document.createElement("section");
+      block.className = "season";
+      const bar = document.createElement("div");
+      bar.className = "season-head";
+      const heading = document.createElement("h2");
+      const watched = (season.episodes || []).filter((episode) => episode.watched).length;
+      const total = (season.episodes || []).length;
+      heading.textContent = "Сезон " + season.number + " · " + watched + " из " + total;
+      let action;
+      if (queuedSeasons.has(season.id)) {
+        action = document.createElement("span");
+        action.className = "queued";
+        action.textContent = "В очереди";
+      } else {
+        action = document.createElement("button");
+        action.className = "primary";
+        action.type = "button";
+        action.textContent = "Сезон в очередь";
+        action.addEventListener("click", async () => {
+          clearError();
+          try {
+            await api("/api/queue", { method: "POST", body: { seasonId: season.id } });
+            action.replaceWith(Object.assign(document.createElement("span"), { className: "queued", textContent: "В очереди" }));
+          } catch (err) {
+            if (gone(err)) return;
+            showError(err.message);
+          }
+        });
+      }
+      bar.append(heading, action);
+      block.append(bar);
+      (season.episodes || []).forEach((episode) => {
+        const row = document.createElement("div");
+        row.className = "episode";
+        const name = document.createElement("span");
+        name.className = "name" + (episode.watched ? " watched" : "");
+        name.textContent = episode.number + ". " + (episode.name || "Серия") + (episode.runtime ? " · " + episode.runtime + " мин" : "");
+        const mark = document.createElement("button");
+        mark.className = "ghost";
+        mark.type = "button";
+        mark.textContent = episode.watched ? "Смотрел" : "Не смотрел";
+        mark.addEventListener("click", async () => {
+          clearError();
+          try {
+            await api("/api/episodes/" + episode.id, { method: "POST", body: { watched: !episode.watched } });
+            await load();
+          } catch (err) {
+            if (!gone(err)) showError(err.message);
+          }
+        });
+        row.append(name, mark);
+        block.append(row);
+      });
+      seasons.append(block);
+    });
+  }
+
+  load().catch((err) => {
+    if (!gone(err)) showError(err.message);
+  });
 }
 
 boot();

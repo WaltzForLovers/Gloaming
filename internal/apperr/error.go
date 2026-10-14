@@ -17,6 +17,7 @@ const (
 	CodeInvalidFreeTime    = "INVALID_FREE_TIME"
 	CodeNotFound           = "NOT_FOUND"
 	CodePortBusy           = "PORT_BUSY"
+	CodeTooMany            = "TOO_MANY"
 	CodeInternal           = "INTERNAL"
 )
 
@@ -73,6 +74,10 @@ func AlreadyInQueue() *Error {
 
 func InvalidFreeTime() *Error {
 	return &Error{Code: CodeInvalidFreeTime, Message: "Укажите свободное время в пределах семи суток.", cause: plan.ErrInvalidFreeTime}
+}
+
+func TooMany() *Error {
+	return &Error{Code: CodeTooMany, Message: "Слишком много попыток. Подождите минуту."}
 }
 
 func NotFound() *Error {

@@ -30,6 +30,16 @@
     <div class="alert"><div><p></p></div></div>
     <p class="hint">Введите название</p>
     <div class="hits"></div>
+    <button class="text-btn manual-open" type="button" hidden>Нет нужного — своя карточка</button>
+    <form class="manual" hidden>
+      <p class="manual-lead"></p>
+      <div class="manual-fields">
+        <label>Год<input name="year" inputmode="numeric" autocomplete="off"></label>
+        <label>Серий<input name="episodes" inputmode="numeric" autocomplete="off"></label>
+        <label>Минут<input name="average" inputmode="numeric" autocomplete="off"></label>
+      </div>
+      <button class="primary" type="submit">Создать карточку</button>
+    </form>
   </main>
   <script src="js/app.js"></script>
 </body>

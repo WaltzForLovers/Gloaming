@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/WaltzForLovers/Gloaming/internal/apperr"
@@ -12,11 +11,11 @@ import (
 func TestQueueOrder(t *testing.T) {
 	db := openDB(t)
 	ctx := context.Background()
-	user, err := db.CreateUser(ctx, "ann", "hash")
+	user, err := db.CreateUser(ctx, "ann", "hash", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := db.CreateUser(ctx, "bob", "hash")
+	other, err := db.CreateUser(ctx, "bob", "hash", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,10 +104,5 @@ func mustTitle(t *testing.T, db *storage.DB, external int, name string) storage.
 
 func openDB(t *testing.T) *storage.DB {
 	t.Helper()
-	db, err := storage.Open(filepath.Join(t.TempDir(), "queue.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
+	return storage.OpenTest(t)
 }

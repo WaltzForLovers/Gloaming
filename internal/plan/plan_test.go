@@ -192,6 +192,44 @@ func TestBuildUnknownDurationIsSkipped(t *testing.T) {
 	}
 }
 
+func TestBuildPlansOnlyRemainingEpisodes(t *testing.T) {
+	got, err := Build([]Item{{Title: "Season", Remaining: []int{40, 40, 40}}}, 90)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Result{
+		Lines:        []Line{{Title: "Season", Outcome: OutcomePartial, Episodes: 2, Minutes: 80}},
+		SpentMinutes: 80,
+		LeftMinutes:  10,
+		QueueMinutes: 120,
+	}
+	if !sameResult(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+
+	done, err := Build([]Item{{Title: "Done", Remaining: []int{}}}, 90)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(done.Lines) != 0 || done.SpentMinutes != 0 || done.LeftMinutes != 90 || done.QueueMinutes != 0 {
+		t.Fatalf("finished season should leave the window: %+v", done)
+	}
+
+	skipped, err := Build([]Item{{Title: "Gap", Remaining: []int{0, 30}}}, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSkip := Result{
+		Lines:        []Line{{Title: "Gap", Outcome: OutcomeFull, Episodes: 1, Minutes: 30}},
+		SpentMinutes: 30,
+		LeftMinutes:  10,
+		QueueMinutes: 30,
+	}
+	if !sameResult(skipped, wantSkip) {
+		t.Fatalf("unknown episode: %+v", skipped)
+	}
+}
+
 func TestBuildContinuesAfterAFullItem(t *testing.T) {
 	items := []Item{
 		{Title: "Show", EpisodeCount: 2, AverageMinutes: 30},
@@ -212,6 +250,41 @@ func TestBuildContinuesAfterAFullItem(t *testing.T) {
 	}
 	if !sameResult(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestRhythmOf(t *testing.T) {
+	items := []Item{
+		{Title: "Done", Remaining: []int{}},
+		{Title: "Current", Remaining: []int{60, 0, 60, 60}},
+		{Title: "Later", Remaining: []int{30}},
+	}
+	got := RhythmOf(40, items)
+	if !got.HasCurrent || got.CurrentTitle != "Current" || got.CurrentMinutes != 180 || got.CurrentOffset != 4 {
+		t.Fatalf("current %+v", got)
+	}
+	if !got.HasQueue || got.QueueMinutes != 210 || got.QueueOffset != 5 || got.DailyMinutes != 40 {
+		t.Fatalf("queue %+v", got)
+	}
+
+	today, ok := FinishOffset(40, 40)
+	tomorrow, okTomorrow := FinishOffset(41, 40)
+	if !ok || today != 0 || !okTomorrow || tomorrow != 1 {
+		t.Fatalf("today %d %v tomorrow %d %v", today, ok, tomorrow, okTomorrow)
+	}
+	if _, ok := FinishOffset(30, 0); ok {
+		t.Fatal("pace 0 should not place a date")
+	}
+
+	unset := RhythmOf(0, items)
+	if !unset.HasCurrent || unset.CurrentOffset != 0 || unset.QueueOffset != 0 {
+		t.Fatalf("unset %+v", unset)
+	}
+	if _, err := NormalizeDaily(1441); !errors.Is(err, ErrInvalidDaily) {
+		t.Fatal(err)
+	}
+	if minutes, err := NormalizeDaily(0); err != nil || minutes != 0 {
+		t.Fatalf("%d %v", minutes, err)
 	}
 }
 

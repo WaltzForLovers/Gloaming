@@ -225,6 +225,12 @@ input:focus { outline: none; border-color: var(--accent); }
 .hint { color: var(--muted); margin: 22px 0; }
 
 .hits { margin-top: 8px; }
+.manual { margin-top: 18px; }
+.manual-lead { margin: 0 0 12px; color: var(--muted); }
+.manual-fields { display: flex; gap: 10px; }
+.manual-fields label { flex: 1; margin: 0; }
+.manual .primary { margin-top: 12px; }
+.manual-open { margin-top: 14px; padding: 0; }
 
 .hit {
   border-bottom: 1px solid var(--line);
@@ -314,7 +320,8 @@ img.poster { -webkit-user-drag: none; }
 
 .fold { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--move) var(--ease); }
 .hit.open .fold { grid-template-rows: 1fr; }
-.fold-inner { overflow: hidden; }
+.fold-inner { overflow: hidden; min-height: 0; }
+.hit:not(.open) .fold { pointer-events: none; }
 .fold-inner p { margin: 12px 0 0; color: var(--muted); }
 .fold-inner .primary { margin-top: 14px; }
 .queued { display: inline-block; margin-top: 14px; color: var(--muted); animation: fade var(--fast) var(--ease); }
@@ -331,6 +338,17 @@ img.poster { -webkit-user-drag: none; }
 }
 
 .summary { margin: -6px 0 18px; color: var(--muted); }
+
+.rhythm { margin: 0 0 16px; }
+.rhythm label { max-width: 140px; margin: 0; }
+.rhythm-line { margin: -8px 0 14px; }
+.letter { color: var(--muted); margin: -8px 0 14px; }
+.notice { color: var(--muted); }
+.picks { margin-top: 28px; }
+.picks h2 { margin: 0 0 10px; font-size: 1rem; font-weight: 500; }
+.pick-list { display: flex; flex-direction: column; gap: 8px; }
+.pick-list a { color: inherit; }
+.assembling { color: var(--muted); }
 
 .time label { flex: 0 0 92px; margin: 0; }
 .time .primary { width: auto; margin: 0 0 0 auto; white-space: nowrap; }
@@ -558,9 +576,21 @@ img.poster { -webkit-user-drag: none; }
 .ghost:hover { color: var(--text); border-color: #4a4e57; }
 .ghost.danger:hover { color: var(--stop); border-color: var(--stop); }
 .ghost:disabled, .primary:disabled { opacity: 0.55; pointer-events: none; }
+a.primary { display: inline-block; text-decoration: none; }
+a.primary:hover { text-decoration: none; }
+.back { margin: 0 0 12px; }
+.back a { color: var(--muted); }
+.title-head { display: flex; gap: 16px; align-items: flex-end; margin-bottom: 22px; }
+.title-head h1 { margin: 0 0 6px; }
+.season { margin: 0 0 22px; }
+.season-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 8px; }
+.season-head h2 { margin: 0; font-size: 18px; }
+.episode { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.episode .name { flex: 1; }
+.episode .watched { color: var(--muted); text-decoration: line-through; }
 
 @media (max-width: 640px) {
-  .search-form, .time { flex-direction: column; align-items: stretch; }
+  .search-form, .time, .manual-fields { flex-direction: column; align-items: stretch; }
   .search-form .primary, .time .primary { width: 100%; }
   .hit-copy { flex-direction: column; align-items: flex-start; gap: 2px; }
   .detail { flex-direction: column; }
