@@ -3,7 +3,6 @@ package storage
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -11,17 +10,21 @@ import (
 )
 
 func TestOpenCreatesTablesAndReopens(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "queue.db")
-	db := openAt(t, path)
+	db := open(t)
 	ctx := context.Background()
-	if _, err := db.CreateUser(ctx, "ann", "hash"); err != nil {
+	if _, err := db.CreateUser(ctx, "ann", "hash", ""); err != nil {
 		t.Fatal(err)
 	}
+	dsn := db.DSN()
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	db = openAt(t, path)
-	got, err := db.UserByUsername(ctx, "ann")
+	reopened, err := Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { reopened.Close() })
+	got, err := reopened.UserByUsername(ctx, "ann")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,9 +33,8 @@ func TestOpenCreatesTablesAndReopens(t *testing.T) {
 	}
 }
 
-func TestOpenMissingDirectory(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "missing", "queue.db")
-	_, err := Open(path)
+func TestOpenMissingDatabaseHost(t *testing.T) {
+	_, err := Open("postgres://127.0.0.1:1/nope?sslmode=disable&connect_timeout=1")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -44,11 +46,11 @@ func TestOpenMissingDirectory(t *testing.T) {
 func TestUsersAndSessions(t *testing.T) {
 	db := open(t)
 	ctx := context.Background()
-	user, err := db.CreateUser(ctx, "ann", "hash")
+	user, err := db.CreateUser(ctx, "ann", "hash", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.CreateUser(ctx, "ann", "other"); !errors.Is(err, ErrUsernameTaken) {
+	if _, err := db.CreateUser(ctx, "ann", "other", ""); !errors.Is(err, ErrUsernameTaken) {
 		t.Fatalf("duplicate: %v", err)
 	}
 	if _, err := db.UserByUsername(ctx, "missing"); !errors.Is(err, ErrNotFound) {
@@ -77,11 +79,11 @@ func TestUsersAndSessions(t *testing.T) {
 func TestTitlesAndQueue(t *testing.T) {
 	db := open(t)
 	ctx := context.Background()
-	ann, err := db.CreateUser(ctx, "ann", "hash")
+	ann, err := db.CreateUser(ctx, "ann", "hash", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	bob, err := db.CreateUser(ctx, "bob", "hash")
+	bob, err := db.CreateUser(ctx, "bob", "hash", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,17 +202,87 @@ func TestSameExternalIDFromTwoSources(t *testing.T) {
 	}
 }
 
-func open(t *testing.T) *DB {
-	t.Helper()
-	return openAt(t, filepath.Join(t.TempDir(), "queue.db"))
-}
-
-func openAt(t *testing.T, path string) *DB {
-	t.Helper()
-	db, err := Open(path)
+func TestWatchedEpisodesLeaveTheRemainder(t *testing.T) {
+	db := open(t)
+	ctx := context.Background()
+	user, err := db.CreateUser(ctx, "ann", "hash", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
-	return db
+	title, err := db.UpsertTitle(ctx, Title{ExternalID: 1, Name: "Show", Year: 2010, EpisodeCount: 1, AverageMinutes: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.ReplaceEpisodes(ctx, title.ID, []EpisodeSeed{
+		{SeasonNumber: 1, Number: 1, Name: "One", Runtime: 40},
+		{SeasonNumber: 1, Number: 2, Name: "Two", Runtime: 50},
+		{SeasonNumber: 2, Number: 1, Name: "Next", Runtime: 60},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.AddQueueItem(ctx, user.ID, title.ID); !errors.Is(err, ErrPickSeason) {
+		t.Fatalf("whole show: %v", err)
+	}
+	seasons, err := db.TitleSeasons(ctx, title.ID, user.ID)
+	if err != nil || len(seasons) != 2 || len(seasons[0].Episodes) != 2 {
+		t.Fatalf("%+v %v", seasons, err)
+	}
+	if err := db.SetWatched(ctx, user.ID, seasons[0].Episodes[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	item, err := db.AddSeason(ctx, user.ID, seasons[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.TotalEpisodes != 2 || len(item.Remaining) != 1 || item.Remaining[0] != 50 {
+		t.Fatalf("%+v", item)
+	}
+}
+
+func TestManualTitleStaysWithItsOwner(t *testing.T) {
+	db := open(t)
+	ctx := context.Background()
+	owner, err := db.CreateUser(ctx, "owner", "hash", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := db.CreateUser(ctx, "other", "hash", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := db.CreateManual(ctx, owner.ID, Title{Name: "Домашний вечер", Year: 1999, EpisodeCount: 3, AverageMinutes: 40})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Source != "manual" || saved.OwnerID != owner.ID || saved.ID == 0 {
+		t.Fatalf("%+v", saved)
+	}
+	seasons, err := db.TitleSeasons(ctx, saved.ID, owner.ID)
+	if err != nil || len(seasons) != 1 || len(seasons[0].Episodes) != 3 || seasons[0].Episodes[2].Runtime != 40 {
+		t.Fatalf("%+v %v", seasons, err)
+	}
+	found, err := db.ManualTitles(ctx, owner.ID, "дом")
+	if err != nil || len(found) != 1 || found[0].ID != saved.ID {
+		t.Fatalf("%+v %v", found, err)
+	}
+	hidden, err := db.ManualTitles(ctx, other.ID, "домашний")
+	if err != nil || len(hidden) != 0 {
+		t.Fatalf("%+v %v", hidden, err)
+	}
+	if _, err := db.ManualTitles(ctx, owner.ID, "100%"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.AddQueueItem(ctx, other.ID, saved.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("other user: %v", err)
+	}
+	item, err := db.AddQueueItem(ctx, owner.ID, saved.ID)
+	if err != nil || item.Title.Name != "Домашний вечер" || len(item.Remaining) != 3 {
+		t.Fatalf("%+v %v", item, err)
+	}
+}
+
+func open(t *testing.T) *DB {
+	t.Helper()
+	return OpenTest(t)
 }

@@ -1,6 +1,8 @@
 /bin/
 /dist/
+/posters/
 *.exe
 *.db
 *.test
 *.out
+dump.rdb

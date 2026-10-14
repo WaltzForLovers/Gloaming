@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,7 +27,7 @@ func TestRegisterValidation(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := svc.Register(ctx, tc.user, tc.pass)
+			_, err := svc.Register(ctx, tc.user, tc.pass, "ann@example.com")
 			if apperr.From(err).Code != apperr.CodeValidation {
 				t.Fatalf("%v", err)
 			}
@@ -41,7 +40,7 @@ func TestRegisterLoginAndLogout(t *testing.T) {
 	db := svc.db
 	ctx := context.Background()
 
-	user, err := svc.Register(ctx, "Анна_1", "пароль12")
+	user, err := svc.Register(ctx, "Анна_1", "пароль12", "anna@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +58,7 @@ func TestRegisterLoginAndLogout(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = svc.Register(ctx, "Анна_1", "пароль12")
+	_, err = svc.Register(ctx, "Анна_1", "пароль12", "anna@example.com")
 	if apperr.From(err).Code != apperr.CodeUserExists {
 		t.Fatalf("duplicate: %v", err)
 	}
@@ -105,12 +104,52 @@ func TestUserWithoutSession(t *testing.T) {
 	}
 }
 
-func newService(t *testing.T) *Service {
-	t.Helper()
-	db, err := storage.Open(filepath.Join(t.TempDir(), "queue.db"))
-	if err != nil {
+type box struct {
+	to, subject, body string
+}
+
+func (b *box) Send(_ context.Context, to, subject, body string) error {
+	b.to, b.subject, b.body = to, subject, body
+	return nil
+}
+
+func TestResetPasswordByMail(t *testing.T) {
+	svc := newService(t)
+	ctx := context.Background()
+	sent := &box{}
+	svc.UseMail(sent, "http://127.0.0.1:8080")
+	if _, err := svc.Register(ctx, "ann", "password", "ann@example.com"); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
-	return New(db)
+	if !strings.Contains(sent.body, "создан") {
+		t.Fatalf("welcome %q", sent.body)
+	}
+	if err := svc.Forgot(ctx, "missing@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Forgot(ctx, "ann@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sent.body, "reset.html?token=") {
+		t.Fatalf("reset mail %q", sent.body)
+	}
+	token := sent.body[strings.Index(sent.body, "token=")+len("token="):]
+	token = strings.TrimSpace(strings.Split(token, "\n")[0])
+	if err := svc.Reset(ctx, token, "new-password"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Login(ctx, "ann", "password"); apperr.From(err).Code != apperr.CodeInvalidCredentials {
+		t.Fatalf("old password: %v", err)
+	}
+	if _, _, err := svc.Login(ctx, "ann", "new-password"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Reset(ctx, token, "another-password"); apperr.From(err).Code != apperr.CodeValidation {
+		t.Fatalf("spent token: %v", err)
+	}
+}
+
+func newService(t *testing.T) *Service {
+	t.Helper()
+	return New(storage.OpenTest(t))
 }

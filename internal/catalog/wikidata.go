@@ -3,12 +3,12 @@ package catalog
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 const filmSearchLimit = 15
@@ -25,6 +25,12 @@ type Wikidata struct {
 	wiki  string
 	pages string
 	http  *http.Client
+	cache Cache
+}
+
+func (c *Wikidata) WithCache(cache Cache) *Wikidata {
+	c.cache = cache
+	return c
 }
 
 func NewWikidata(wikiBase, pagesBase string) *Wikidata {
@@ -44,7 +50,9 @@ func (c *Wikidata) SearchFilms(ctx context.Context, query string) ([]Show, error
 	if err != nil || len(films) == 0 {
 		return films, err
 	}
-	posters, err := c.posters(ctx, titles)
+	pctx, pcancel := context.WithTimeout(ctx, time.Second)
+	defer pcancel()
+	posters, err := c.posters(pctx, titles)
 	if err != nil {
 		return films, nil
 	}
@@ -145,6 +153,13 @@ func (c *Wikidata) posters(ctx context.Context, titles []string) (map[string]str
 	return found, nil
 }
 
+func (c *Wikidata) Poster(ctx context.Context, title string) (string, error) {
+	if title == "" {
+		return "", nil
+	}
+	return c.poster(ctx, title)
+}
+
 func (c *Wikidata) poster(ctx context.Context, title string) (string, error) {
 	endpoint := c.pages + "/api/rest_v1/page/summary/" + url.PathEscape(title)
 	var payload struct {
@@ -159,23 +174,12 @@ func (c *Wikidata) poster(ctx context.Context, title string) (string, error) {
 }
 
 func (c *Wikidata) get(ctx context.Context, endpoint string, dest any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	body, status, err := loadBody(ctx, c.http, c.cache, "Gloaming/1.0 (local watch queue)", endpoint)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Gloaming/1.0 (local watch queue)")
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return errStatus(resp.StatusCode)
+	if status != http.StatusOK {
+		return statusError(status)
 	}
 	if err := json.Unmarshal(body, dest); err != nil {
 		return err
@@ -223,13 +227,15 @@ func (e wikiEntity) show(id string) (Show, string, bool) {
 	if err != nil || number <= 0 || name == "" {
 		return Show{}, "", false
 	}
+	title := e.Sitelinks["enwiki"].Title
 	return Show{
-		ID:      number,
-		Source:  sourceWikidata,
-		Name:    name,
-		Year:    e.year(),
-		Runtime: e.minutes(),
-	}, e.Sitelinks["enwiki"].Title, true
+		ID:        number,
+		Source:    sourceWikidata,
+		Name:      name,
+		Year:      e.year(),
+		Runtime:   e.minutes(),
+		WikiTitle: title,
+	}, title, true
 }
 
 func (e wikiEntity) year() int {

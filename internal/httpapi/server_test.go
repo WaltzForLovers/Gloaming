@@ -2,13 +2,14 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
-	"path/filepath"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/WaltzForLovers/Gloaming/internal/apperr"
 	"github.com/WaltzForLovers/Gloaming/internal/auth"
 	"github.com/WaltzForLovers/Gloaming/internal/catalog"
+	"github.com/WaltzForLovers/Gloaming/internal/limit"
 	"github.com/WaltzForLovers/Gloaming/internal/queue"
 	"github.com/WaltzForLovers/Gloaming/internal/storage"
 	"github.com/WaltzForLovers/Gloaming/web"
@@ -43,11 +45,7 @@ func TestAPI(t *testing.T) {
 	}))
 	defer tv.Close()
 
-	db, err := storage.Open(filepath.Join(t.TempDir(), "queue.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := storage.OpenTest(t)
 	handler := New(auth.New(db), catalog.New(db, catalog.NewHTTPClient(tv.URL)), queue.New(db), io.Discard, nil)
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
@@ -66,11 +64,11 @@ func TestAPI(t *testing.T) {
 	if status != http.StatusBadRequest || !strings.Contains(body, "Имя:") {
 		t.Fatalf("register: %d %s", status, body)
 	}
-	status, body = post(t, client, srv.URL+"/api/register", `{"username":"ann","password":"password"}`)
+	status, body = post(t, client, srv.URL+"/api/register", `{"username":"ann","password":"password","email":"ann@example.com"}`)
 	if status != http.StatusCreated || !strings.Contains(body, `"username":"ann"`) {
 		t.Fatalf("register ok: %d %s", status, body)
 	}
-	status, _ = post(t, client, srv.URL+"/api/register", `{"username":"ann","password":"password"}`)
+	status, _ = post(t, client, srv.URL+"/api/register", `{"username":"ann","password":"password","email":"other@example.com"}`)
 	if status != http.StatusConflict {
 		t.Fatalf("duplicate %d", status)
 	}
@@ -210,6 +208,35 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("partial %+v", planBody)
 	}
 
+	status, body = patch(t, client, srv.URL+"/api/rhythm", `{"dailyMinutes":40}`)
+	if status != http.StatusOK {
+		t.Fatalf("rhythm: %d %s", status, body)
+	}
+	var rhythm struct {
+		DailyMinutes   int    `json:"dailyMinutes"`
+		CurrentTitle   string `json:"currentTitle"`
+		CurrentMinutes int    `json:"currentMinutes"`
+		CurrentOffset  int    `json:"currentOffset"`
+		HasCurrent     bool   `json:"hasCurrent"`
+		QueueMinutes   int    `json:"queueMinutes"`
+		QueueOffset    int    `json:"queueOffset"`
+		HasQueue       bool   `json:"hasQueue"`
+	}
+	if err := json.Unmarshal([]byte(body), &rhythm); err != nil {
+		t.Fatal(err)
+	}
+	if !rhythm.HasCurrent || rhythm.CurrentTitle != "Test Film" || rhythm.CurrentMinutes != 80 || rhythm.CurrentOffset != 1 || !rhythm.HasQueue || rhythm.QueueMinutes != 260 || rhythm.QueueOffset != 6 || rhythm.DailyMinutes != 40 {
+		t.Fatalf("%+v", rhythm)
+	}
+	status, body = get(t, client, srv.URL+"/api/queue")
+	if !strings.Contains(body, `"currentTitle":"Test Film"`) || !strings.Contains(body, `"dailyMinutes":40`) {
+		t.Fatalf("queue rhythm: %s", body)
+	}
+	status, body = patch(t, client, srv.URL+"/api/rhythm", `{"dailyMinutes":1441}`)
+	if status != http.StatusBadRequest || !strings.Contains(body, "1440") {
+		t.Fatalf("bad pace: %d %s", status, body)
+	}
+
 	status, body = post(t, client, srv.URL+"/api/plan", `{"hours":0,"minutes":0}`)
 	if status != http.StatusBadRequest || !strings.Contains(body, apperr.InvalidFreeTime().Message) {
 		t.Fatalf("bad time: %d %s", status, body)
@@ -246,12 +273,91 @@ func post(t *testing.T, client *http.Client, url, body string) (int, string) {
 	return do(t, client, http.MethodPost, url, body)
 }
 
-func TestPages(t *testing.T) {
-	db, err := storage.Open(filepath.Join(t.TempDir(), "queue.db"))
+func TestManualCard(t *testing.T) {
+	db := storage.OpenTest(t)
+	handler := New(auth.New(db), catalog.New(db, catalog.NewHTTPClient("http://127.0.0.1:9")), queue.New(db), io.Discard, nil)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	owner := &http.Client{Jar: jar}
+	status, body := post(t, owner, srv.URL+"/api/register", `{"username":"ann","password":"password","email":"ann@example.com"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("register: %d %s", status, body)
+	}
+	status, body = post(t, owner, srv.URL+"/api/login", `{"username":"ann","password":"password"}`)
+	if status != http.StatusOK {
+		t.Fatalf("login: %d %s", status, body)
+	}
+	status, body = post(t, owner, srv.URL+"/api/titles", `{"name":"Домашний вечер","year":1999,"episodeCount":1,"averageMinutes":90}`)
+	if status != http.StatusCreated || !strings.Contains(body, `"kind":"film"`) || !strings.Contains(body, `"year":1999`) {
+		t.Fatalf("create: %d %s", status, body)
+	}
+	var created struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(body), &created); err != nil || created.ID == 0 {
+		t.Fatal(err, body)
+	}
+	status, body = get(t, owner, srv.URL+"/api/titles?q="+url.QueryEscape("домаш"))
+	if status != http.StatusOK || !strings.Contains(body, "Домашний вечер") {
+		t.Fatalf("search own: %d %s", status, body)
+	}
+	status, body = post(t, owner, srv.URL+"/api/titles", `{"name":"x","year":1999,"episodeCount":1,"averageMinutes":90}`)
+	if status != http.StatusBadRequest || !strings.Contains(body, "Название:") {
+		t.Fatalf("short name: %d %s", status, body)
+	}
+	status, body = post(t, owner, srv.URL+"/api/titles", `{"name":"Сериал дома","year":2011,"episodeCount":4,"averageMinutes":25}`)
+	if status != http.StatusCreated || !strings.Contains(body, `"kind":"series"`) {
+		t.Fatalf("series: %d %s", status, body)
+	}
+	var series struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(body), &series); err != nil {
+		t.Fatal(err)
+	}
+	status, body = get(t, owner, srv.URL+"/api/titles/"+itoa(series.ID))
+	if status != http.StatusOK || strings.Count(body, `"runtime":25`) != 4 {
+		t.Fatalf("episodes: %d %s", status, body)
+	}
+
+	otherJar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := &http.Client{Jar: otherJar}
+	status, body = post(t, other, srv.URL+"/api/register", `{"username":"bob","password":"password","email":"bob@example.com"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("bob: %d %s", status, body)
+	}
+	status, body = post(t, other, srv.URL+"/api/login", `{"username":"bob","password":"password"}`)
+	if status != http.StatusOK {
+		t.Fatalf("bob login: %d %s", status, body)
+	}
+	status, body = get(t, other, srv.URL+"/api/titles?q="+url.QueryEscape("домаш"))
+	if status != http.StatusServiceUnavailable {
+		t.Fatalf("hidden search: %d %s", status, body)
+	}
+	status, body = get(t, other, srv.URL+"/api/titles/"+itoa(created.ID))
+	if status != http.StatusNotFound {
+		t.Fatalf("hidden card: %d %s", status, body)
+	}
+	status, body = post(t, other, srv.URL+"/api/queue", `{"titleId":`+itoa(created.ID)+`}`)
+	if status != http.StatusNotFound {
+		t.Fatalf("hidden queue: %d %s", status, body)
+	}
+
+	status, body = post(t, owner, srv.URL+"/api/queue", `{"titleId":`+itoa(created.ID)+`}`)
+	if status != http.StatusCreated || !strings.Contains(body, `"remainingMinutes":90`) {
+		t.Fatalf("queue: %d %s", status, body)
+	}
+}
+
+func TestPages(t *testing.T) {
+	db := storage.OpenTest(t)
 	handler := New(auth.New(db), catalog.New(db, catalog.NewHTTPClient("http://127.0.0.1:9")), queue.New(db), io.Discard, web.Files)
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
@@ -293,6 +399,53 @@ func TestPages(t *testing.T) {
 func patch(t *testing.T, client *http.Client, url, body string) (int, string) {
 	t.Helper()
 	return do(t, client, http.MethodPatch, url, body)
+}
+
+func TestLoginCookieIsSecureBehindHTTPS(t *testing.T) {
+	db := storage.OpenTest(t)
+	if _, err := auth.New(db).Register(context.Background(), "ann", "password", "ann@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	handler := New(auth.New(db), catalog.New(db, catalog.NewHTTPClient("http://127.0.0.1:9")), queue.New(db), io.Discard, nil)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/login", strings.NewReader(`{"username":"ann","password":"password"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var secure bool
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == "session" && cookie.Secure && cookie.HttpOnly {
+			secure = true
+		}
+	}
+	if resp.StatusCode != http.StatusOK || !secure {
+		t.Fatalf("status %d cookies %+v", resp.StatusCode, resp.Cookies())
+	}
+}
+
+func TestGuardStopsRepeatedLogin(t *testing.T) {
+	handler := Guard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}), &limit.Memory{})
+	var last int
+	for i := 0; i < 21; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/login", nil)
+		req.RemoteAddr = "10.0.0.8:1234"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		last = rec.Code
+	}
+	if last != http.StatusTooManyRequests {
+		t.Fatalf("status %d", last)
+	}
 }
 
 func get(t *testing.T, client *http.Client, url string) (int, string) {

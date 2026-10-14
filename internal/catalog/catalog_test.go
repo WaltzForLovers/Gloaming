@@ -3,7 +3,9 @@ package catalog
 import (
 	"context"
 	"errors"
-	"path/filepath"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -125,6 +127,23 @@ func TestSearchStopsAtTenAndOnTimeout(t *testing.T) {
 	}
 }
 
+func TestSearchSavesFilmsWhenShowCatalogTimesOut(t *testing.T) {
+	db := openDB(t)
+	shows := &fakeClient{block: true}
+	films := &fakeFilms{films: map[string][]Show{
+		"dragon": {{ID: 373096, Name: "How to Train Your Dragon", Year: 2010, Runtime: 98}},
+	}}
+	svc := New(db, shows).WithFilms(films)
+	svc.timeout = 30 * time.Millisecond
+	cards, err := svc.Search(context.Background(), "dragon")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 1 || cards[0].Name != "How to Train Your Dragon" || cards[0].ID == 0 {
+		t.Fatalf("%+v", cards)
+	}
+}
+
 func TestSearchIncludesFilms(t *testing.T) {
 	db := openDB(t)
 	shows := &fakeClient{shows: map[string][]Show{
@@ -168,6 +187,19 @@ func TestSearchIncludesFilms(t *testing.T) {
 	}
 }
 
+func TestMergeCardsKeepsTheOwnersFirst(t *testing.T) {
+	owned := []Card{{ID: 1, Name: "Mine"}}
+	found := make([]Card, 12)
+	for i := range found {
+		found[i] = Card{ID: int64(i + 2), Name: "Catalog"}
+	}
+	found[0].ID = 1
+	got := MergeCards(owned, found)
+	if len(got) != 10 || got[0].Name != "Mine" || got[1].ID != 3 {
+		t.Fatalf("%d %+v", len(got), got)
+	}
+}
+
 func TestSearchKeepsAFilmWhenShowsFillTheList(t *testing.T) {
 	db := openDB(t)
 	shows := make([]Show, 10)
@@ -187,6 +219,77 @@ func TestSearchKeepsAFilmWhenShowsFillTheList(t *testing.T) {
 	}
 }
 
+func TestSearchReturnsFilmsWhileShowsLag(t *testing.T) {
+	db := openDB(t)
+	shows := &fakeClient{block: true}
+	films := &fakeFilms{films: map[string][]Show{
+		"lag": {{ID: 3, Name: "Film", Year: 2001, Runtime: 90}},
+	}}
+	svc := New(db, shows).WithFilms(films)
+	svc.timeout = 5 * time.Second
+	svc.grace = 30 * time.Millisecond
+	start := time.Now()
+	cards, err := svc.Search(context.Background(), "lag")
+	if err != nil || len(cards) != 1 || cards[0].Name != "Film" || cards[0].Year != 2001 {
+		t.Fatalf("%v %+v", err, cards)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatal(time.Since(start))
+	}
+}
+
+func TestSearchLeavesASlowSeasonAssembling(t *testing.T) {
+	db := openDB(t)
+	shows := &fakeClient{
+		shows:         map[string][]Show{"slow": {{ID: 9, Name: "Slow", Year: 2011, AverageRuntime: 40}}},
+		blockEpisodes: true,
+	}
+	svc := New(db, shows)
+	svc.episodeBudget = 30 * time.Millisecond
+	cards, err := svc.Search(context.Background(), "slow")
+	if err != nil || len(cards) != 1 || !cards[0].Assembling {
+		t.Fatalf("%v %+v", err, cards)
+	}
+	seasons, err := db.TitleSeasons(context.Background(), cards[0].ID, 0)
+	if err != nil || len(seasons) != 0 {
+		t.Fatalf("%v %+v", err, seasons)
+	}
+	shows.blockEpisodes = false
+	shows.episodes = map[int][]Episode{
+		9: {{Season: 1, Number: 1, Runtime: 40}, {Season: 1, Number: 2, Runtime: 40}},
+	}
+	if err := svc.Assemble(context.Background(), cards[0].ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	title, err := db.TitleByID(context.Background(), cards[0].ID)
+	if err != nil || title.Assembling || title.EpisodeCount != 2 {
+		t.Fatalf("%v %+v", err, title)
+	}
+	seasons, err = db.TitleSeasons(context.Background(), cards[0].ID, 0)
+	if err != nil || len(seasons) != 1 || len(seasons[0].Episodes) != 2 {
+		t.Fatalf("%v %+v", err, seasons)
+	}
+}
+
+func TestCatalogGetUsesCache(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		fmt.Fprint(w, `[{"show":{"id":1,"name":"Cached"}}]`)
+	}))
+	defer srv.Close()
+	client := NewHTTPClient(srv.URL).WithCache(newMemoryCache())
+	for i := 0; i < 2; i++ {
+		shows, err := client.SearchShows(context.Background(), "q")
+		if err != nil || len(shows) != 1 || shows[0].Name != "Cached" {
+			t.Fatal(err, shows)
+		}
+	}
+	if hits != 1 {
+		t.Fatalf("hits %d", hits)
+	}
+}
+
 type fakeFilms struct {
 	films map[string][]Show
 	err   error
@@ -200,11 +303,12 @@ func (f *fakeFilms) SearchFilms(_ context.Context, query string) ([]Show, error)
 }
 
 type fakeClient struct {
-	shows    map[string][]Show
-	episodes map[int][]Episode
-	err      error
-	block    bool
-	queries  []string
+	shows         map[string][]Show
+	episodes      map[int][]Episode
+	err           error
+	block         bool
+	blockEpisodes bool
+	queries       []string
 }
 
 func (f *fakeClient) SearchShows(ctx context.Context, query string) ([]Show, error) {
@@ -219,6 +323,10 @@ func (f *fakeClient) SearchShows(ctx context.Context, query string) ([]Show, err
 }
 
 func (f *fakeClient) Episodes(ctx context.Context, showID int) ([]Episode, error) {
+	if f.blockEpisodes {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	if err := f.wait(ctx); err != nil {
 		return nil, err
 	}
@@ -241,10 +349,5 @@ func (f *fakeClient) wait(ctx context.Context) error {
 
 func openDB(t *testing.T) *storage.DB {
 	t.Helper()
-	db, err := storage.Open(filepath.Join(t.TempDir(), "queue.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
+	return storage.OpenTest(t)
 }

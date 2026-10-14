@@ -19,6 +19,10 @@ type Item struct {
 	Title          string
 	EpisodeCount   int
 	AverageMinutes int
+	// Remaining is the unwatched episode runtimes, in order.
+	// A nil slice keeps the older count-and-average rule.
+	// An empty slice means nothing is left to watch.
+	Remaining []int
 }
 
 type Line struct {
@@ -56,13 +60,21 @@ func Build(items []Item, freeMinutes int) (Result, error) {
 	queueMinutes := 0
 	stopped := false
 	for _, item := range items {
-		if known(item) {
-			queueMinutes += item.EpisodeCount * item.AverageMinutes
+		runtimes, ok := episodeRuntimes(item)
+		if ok {
+			for _, runtime := range runtimes {
+				if runtime > 0 {
+					queueMinutes += runtime
+				}
+			}
+		}
+		if item.Remaining != nil && len(item.Remaining) == 0 {
+			continue
 		}
 		if stopped {
 			continue
 		}
-		line, nextLeft, stop := place(item, left)
+		line, nextLeft, stop := place(item, runtimes, ok, left)
 		lines = append(lines, line)
 		left = nextLeft
 		stopped = stop
@@ -76,43 +88,56 @@ func Build(items []Item, freeMinutes int) (Result, error) {
 	}, nil
 }
 
-func known(item Item) bool {
-	return item.EpisodeCount > 0 && item.AverageMinutes > 0
+func episodeRuntimes(item Item) ([]int, bool) {
+	if item.Remaining != nil {
+		if len(item.Remaining) == 0 {
+			return nil, false
+		}
+		return item.Remaining, true
+	}
+	if item.EpisodeCount <= 0 || item.AverageMinutes <= 0 {
+		return nil, false
+	}
+	runtimes := make([]int, item.EpisodeCount)
+	for i := range runtimes {
+		runtimes[i] = item.AverageMinutes
+	}
+	return runtimes, true
 }
 
 // place walks the queue in order. A later shorter title is not pulled forward.
-func place(item Item, left int) (Line, int, bool) {
+func place(item Item, runtimes []int, ok bool, left int) (Line, int, bool) {
 	line := Line{Title: item.Title}
-	if !known(item) {
+	if !ok {
 		line.Outcome = OutcomeSkipped
 		return line, left, false
 	}
-	if item.EpisodeCount == 1 {
-		if item.AverageMinutes <= left {
-			line.Outcome = OutcomeFull
-			line.Episodes = 1
-			line.Minutes = item.AverageMinutes
-			return line, left - item.AverageMinutes, false
+	taken := 0
+	spent := 0
+	for _, runtime := range runtimes {
+		if runtime <= 0 {
+			continue
 		}
-		line.Outcome = OutcomeStopped
-		return line, left, true
+		if runtime > left {
+			if taken == 0 {
+				line.Outcome = OutcomeStopped
+				return line, left, true
+			}
+			line.Outcome = OutcomePartial
+			line.Episodes = taken
+			line.Minutes = spent
+			return line, left, true
+		}
+		taken++
+		spent += runtime
+		left -= runtime
 	}
-
-	total := item.EpisodeCount * item.AverageMinutes
-	if total <= left {
-		line.Outcome = OutcomeFull
-		line.Episodes = item.EpisodeCount
-		line.Minutes = total
-		return line, left - total, false
+	if taken == 0 {
+		line.Outcome = OutcomeSkipped
+		return line, left, false
 	}
-	episodes := left / item.AverageMinutes
-	if episodes < 1 {
-		line.Outcome = OutcomeStopped
-		return line, left, true
-	}
-	spent := episodes * item.AverageMinutes
-	line.Outcome = OutcomePartial
-	line.Episodes = episodes
+	line.Outcome = OutcomeFull
+	line.Episodes = taken
 	line.Minutes = spent
-	return line, left - spent, true
+	return line, left, false
 }
