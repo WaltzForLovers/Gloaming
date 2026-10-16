@@ -1044,6 +1044,24 @@ func (db *DB) UserEmail(ctx context.Context, userID int64) (string, error) {
 	return email, err
 }
 
+func (db *DB) SetEmail(ctx context.Context, userID int64, email string) error {
+	res, err := db.sql.ExecContext(ctx, `UPDATE users SET email = $2 WHERE id = $1`, userID, email)
+	if err != nil {
+		if uniqueConstraint(err) == "users_email_unique" {
+			return ErrEmailTaken
+		}
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (db *DB) SetPassword(ctx context.Context, userID int64, passwordHash string) error {
 	res, err := db.sql.ExecContext(ctx, `UPDATE users SET password_hash = $2 WHERE id = $1`, userID, passwordHash)
 	if err != nil {

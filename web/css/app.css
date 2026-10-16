@@ -344,6 +344,9 @@ img.poster { -webkit-user-drag: none; }
 .rhythm-line { margin: -8px 0 14px; }
 .letter { color: var(--muted); margin: -8px 0 14px; }
 .notice { color: var(--muted); }
+.account-mail { display: flex; align-items: flex-end; gap: 14px; margin: 0 0 18px; }
+.account-mail label { flex: 1; max-width: 320px; margin: 0; }
+.account-mail .text-btn { margin-bottom: 12px; }
 .picks { margin-top: 28px; }
 .picks h2 { margin: 0 0 10px; font-size: 1rem; font-weight: 500; }
 .pick-list { display: flex; flex-direction: column; gap: 8px; }
@@ -447,9 +450,11 @@ img.poster { -webkit-user-drag: none; }
 .page.is-empty {
   min-height: calc(100vh - 88px);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: safe center;
 }
+.page.is-empty .account-mail { width: min(400px, 100%); }
 .page.is-empty .queue-body { display: none; }
 .page.is-empty .empty-gate {
   display: flex;
@@ -590,7 +595,9 @@ a.primary:hover { text-decoration: none; }
 .episode .watched { color: var(--muted); text-decoration: line-through; }
 
 @media (max-width: 640px) {
-  .search-form, .time, .manual-fields { flex-direction: column; align-items: stretch; }
+  .search-form, .time, .manual-fields, .account-mail { flex-direction: column; align-items: stretch; }
+  .account-mail label { max-width: none; }
+  .account-mail .text-btn { margin-bottom: 0; }
   .search-form .primary, .time .primary { width: 100%; }
   .hit-copy { flex-direction: column; align-items: flex-start; gap: 2px; }
   .detail { flex-direction: column; }

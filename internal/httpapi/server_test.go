@@ -401,6 +401,58 @@ func patch(t *testing.T, client *http.Client, url, body string) (int, string) {
 	return do(t, client, http.MethodPatch, url, body)
 }
 
+func TestAccountEmail(t *testing.T) {
+	db := storage.OpenTest(t)
+	ctx := context.Background()
+	accounts := auth.New(db)
+	if _, err := accounts.Register(ctx, "ann", "password", "ann@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.Register(ctx, "bob", "password", "bob@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	handler := New(accounts, catalog.New(db, catalog.NewHTTPClient("http://127.0.0.1:9")), queue.New(db), io.Discard, web.Files)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar}
+	status, body := post(t, client, srv.URL+"/api/login", `{"username":"ann","password":"password"}`)
+	if status != http.StatusOK {
+		t.Fatalf("login %d %s", status, body)
+	}
+	status, body = get(t, client, srv.URL+"/api/me")
+	if status != http.StatusOK || !strings.Contains(body, `"email":"ann@example.com"`) {
+		t.Fatalf("me %d %s", status, body)
+	}
+	status, body = patch(t, client, srv.URL+"/api/me", `{"email":"Ann2@Example.com"}`)
+	if status != http.StatusOK || !strings.Contains(body, `"email":"ann2@example.com"`) {
+		t.Fatalf("save %d %s", status, body)
+	}
+	status, body = patch(t, client, srv.URL+"/api/me", `{"email":"bob@example.com"}`)
+	if status != http.StatusBadRequest || !strings.Contains(body, "Такой адрес уже есть.") {
+		t.Fatalf("taken %d %s", status, body)
+	}
+	status, body = patch(t, client, srv.URL+"/api/me", `{"email":""}`)
+	if status != http.StatusOK || !strings.Contains(body, `"email":""`) {
+		t.Fatalf("clear %d %s", status, body)
+	}
+	page, err := client.Get(srv.URL + "/queue.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pageBody, err := io.ReadAll(page.Body)
+	page.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.StatusCode != http.StatusOK || !strings.Contains(string(pageBody), "account-mail") {
+		t.Fatalf("queue mail form: %d", page.StatusCode)
+	}
+}
+
 func TestLoginCookieIsSecureBehindHTTPS(t *testing.T) {
 	db := storage.OpenTest(t)
 	if _, err := auth.New(db).Register(context.Background(), "ann", "password", "ann@example.com"); err != nil {
