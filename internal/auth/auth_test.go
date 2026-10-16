@@ -105,12 +105,54 @@ func TestUserWithoutSession(t *testing.T) {
 }
 
 type box struct {
+	n                 int
 	to, subject, body string
 }
 
 func (b *box) Send(_ context.Context, to, subject, body string) error {
+	b.n++
 	b.to, b.subject, b.body = to, subject, body
 	return nil
+}
+
+func TestSetEmailOnExistingAccount(t *testing.T) {
+	svc := newService(t)
+	ctx := context.Background()
+	sent := &box{}
+	svc.UseMail(sent, "http://127.0.0.1:8080")
+	ann, err := svc.Register(ctx, "ann", "password", "ann@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Register(ctx, "bob", "password", "bob@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	before := sent.n
+	same, err := svc.SetEmail(ctx, ann.ID, ann.Username, " Ann@Example.com ")
+	if err != nil || same != "ann@example.com" || sent.n != before {
+		t.Fatalf("same address: %q n=%d err=%v", same, sent.n, err)
+	}
+	got, err := svc.SetEmail(ctx, ann.ID, ann.Username, "ann2@example.com")
+	if err != nil || got != "ann2@example.com" {
+		t.Fatalf("set: %q %v", got, err)
+	}
+	if sent.to != "ann2@example.com" || !strings.Contains(sent.body, "указан этот адрес") {
+		t.Fatalf("notice %q %q", sent.to, sent.body)
+	}
+	if _, err := svc.SetEmail(ctx, ann.ID, ann.Username, "bob@example.com"); apperr.From(err).Code != apperr.CodeValidation {
+		t.Fatalf("taken: %v", err)
+	}
+	if _, err := svc.SetEmail(ctx, ann.ID, ann.Username, "nope"); apperr.From(err).Code != apperr.CodeValidation {
+		t.Fatalf("invalid: %v", err)
+	}
+	cleared, err := svc.SetEmail(ctx, ann.ID, ann.Username, "  ")
+	if err != nil || cleared != "" {
+		t.Fatalf("clear: %q %v", cleared, err)
+	}
+	stored, err := svc.Email(ctx, ann.ID)
+	if err != nil || stored != "" {
+		t.Fatalf("stored %q %v", stored, err)
+	}
 }
 
 func TestResetPasswordByMail(t *testing.T) {

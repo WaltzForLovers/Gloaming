@@ -299,6 +299,35 @@ function bindAuth(mode) {
   });
 }
 
+function bindAccountMail(user) {
+  const form = document.querySelector(".account-mail");
+  if (!form) return;
+  const note = document.querySelector(".account-mail-note");
+  form.email.value = user.email || "";
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearError();
+    note.hidden = true;
+    const email = form.email.value.trim();
+    if (email !== "" && (!email.includes("@") || email.length < 6)) {
+      showError("Укажите адрес почты.");
+      return;
+    }
+    const button = form.querySelector("button");
+    setBusy(button, true);
+    try {
+      const data = await api("/api/me", { method: "PATCH", body: { email } });
+      form.email.value = data.email || "";
+      note.textContent = data.email ? "Адрес сохранён. Письмо про четверг будет приходить сюда." : "Адрес убран.";
+      note.hidden = false;
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setBusy(button, false);
+    }
+  });
+}
+
 function bindForgot() {
   const form = document.querySelector("form");
   const notice = document.querySelector(".notice");
@@ -1191,7 +1220,10 @@ async function boot() {
   }
   paintChrome(user);
   if (page === "search") bindSearch();
-  if (page === "queue") bindQueue();
+  if (page === "queue") {
+    bindAccountMail(user);
+    bindQueue();
+  }
   if (page === "title") bindTitle();
 }
 

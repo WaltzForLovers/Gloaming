@@ -51,6 +51,7 @@ func New(authSvc *auth.Service, catalogSvc *catalog.Service, queueSvc *queue.Ser
 	mux.HandleFunc("POST /api/password/forgot", s.forgotPassword)
 	mux.HandleFunc("POST /api/password/reset", s.resetPassword)
 	mux.HandleFunc("GET /api/me", s.me)
+	mux.HandleFunc("PATCH /api/me", s.setEmail)
 	mux.HandleFunc("GET /api/titles", s.searchTitles)
 	mux.HandleFunc("POST /api/titles", s.createTitle)
 	mux.HandleFunc("GET /api/titles/{id}", s.getTitle)
@@ -149,7 +150,33 @@ func (s *server) me(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": user.ID, "username": user.Username})
+	email, err := s.auth.Email(r.Context(), user.ID)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": user.ID, "username": user.Username, "email": email})
+}
+
+func (s *server) setEmail(w http.ResponseWriter, r *http.Request) {
+	user, err := s.currentUser(r)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	var body struct {
+		Email string `json:"email"`
+	}
+	if err := readJSON(w, r, &body); err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	email, err := s.auth.SetEmail(r.Context(), user.ID, user.Username, body.Email)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"email": email})
 }
 
 func (s *server) logout(w http.ResponseWriter, r *http.Request) {

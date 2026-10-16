@@ -72,6 +72,44 @@ func (s *Service) Register(ctx context.Context, username, password, email string
 	return User{ID: stored.ID, Username: stored.Username}, nil
 }
 
+func (s *Service) Email(ctx context.Context, userID int64) (string, error) {
+	email, err := s.db.UserEmail(ctx, userID)
+	if errors.Is(err, storage.ErrNotFound) {
+		return "", apperr.Unauthorized()
+	}
+	if err != nil {
+		return "", apperr.Internal(err)
+	}
+	return email, nil
+}
+
+func (s *Service) SetEmail(ctx context.Context, userID int64, username, email string) (string, error) {
+	email = normalizeEmail(email)
+	if email != "" && !validEmail(email) {
+		return "", apperr.Validation("Укажите адрес почты.")
+	}
+	current, err := s.Email(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if current == email {
+		return email, nil
+	}
+	if err := s.db.SetEmail(ctx, userID, email); err != nil {
+		if errors.Is(err, storage.ErrEmailTaken) {
+			return "", apperr.Validation("Такой адрес уже есть.")
+		}
+		if errors.Is(err, storage.ErrNotFound) {
+			return "", apperr.Unauthorized()
+		}
+		return "", apperr.Internal(err)
+	}
+	if email != "" {
+		_ = s.send(ctx, email, "Адрес для писем", "На аккаунт "+username+" указан этот адрес.\nПисьмо про четверг будет приходить сюда.\n")
+	}
+	return email, nil
+}
+
 func (s *Service) Forgot(ctx context.Context, email string) error {
 	email = normalizeEmail(email)
 	if !validEmail(email) {
