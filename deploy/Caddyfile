@@ -1,3 +1,16 @@
+{
+	auto_https disable_redirects
+	default_sni localhost
+}
+
 :80 {
 	reverse_proxy host.docker.internal:8080
+}
+
+https://localhost, https://127.0.0.1 {
+	bind 0.0.0.0
+	tls internal
+	reverse_proxy host.docker.internal:8080 {
+		header_up X-Forwarded-Proto https
+	}
 }

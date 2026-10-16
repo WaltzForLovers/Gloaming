@@ -37,6 +37,7 @@ services:
     image: caddy:2.8
     ports:
       - "8088:80"
+      - "8443:443"
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
   prometheus:
