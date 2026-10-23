@@ -91,6 +91,47 @@ func TestQueueOrder(t *testing.T) {
 	}
 }
 
+func TestAddAllSeasonsSkipsQueued(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	user, err := db.CreateUser(ctx, "ann", "hash", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	title, err := db.UpsertTitle(ctx, storage.Title{
+		ExternalID: 7, Name: "Long", Year: 2000, EpisodeCount: 3, AverageMinutes: 40,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.ReplaceEpisodes(ctx, title.ID, []storage.EpisodeSeed{
+		{SeasonNumber: 1, Number: 1, Name: "A", Runtime: 40},
+		{SeasonNumber: 2, Number: 1, Name: "B", Runtime: 40},
+		{SeasonNumber: 3, Number: 1, Name: "C", Runtime: 40},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seasons, err := db.TitleSeasons(ctx, title.ID, user.ID)
+	if err != nil || len(seasons) != 3 {
+		t.Fatalf("%v %+v", err, seasons)
+	}
+	svc := New(db)
+	if _, err := svc.AddSeason(ctx, user.ID, seasons[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	added, err := svc.AddAll(ctx, user.ID, title.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(added) != 2 || added[0].SeasonNumber != 1 || added[1].SeasonNumber != 3 || added[0].Position != 2 || added[1].Position != 3 {
+		t.Fatalf("%+v", added)
+	}
+	if _, err := svc.AddAll(ctx, user.ID, title.ID); apperr.From(err).Code != apperr.CodeAlreadyInQueue {
+		t.Fatalf("again: %v", err)
+	}
+}
+
 func mustTitle(t *testing.T, db *storage.DB, external int, name string) storage.Title {
 	t.Helper()
 	title, err := db.UpsertTitle(context.Background(), storage.Title{

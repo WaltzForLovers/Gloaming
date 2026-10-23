@@ -407,9 +407,19 @@ func (s *server) addQueue(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		TitleID  int64 `json:"titleId"`
 		SeasonID int64 `json:"seasonId"`
+		Whole    bool  `json:"whole"`
 	}
 	if err := readJSON(w, r, &body); err != nil {
 		s.writeErr(w, err)
+		return
+	}
+	if body.Whole && body.SeasonID == 0 {
+		items, err := s.queue.AddAll(r.Context(), user.ID, body.TitleID)
+		if err != nil {
+			s.writeErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{"items": itemsJSON(items)})
 		return
 	}
 	var item queue.Item
@@ -602,8 +612,17 @@ func cardJSON(card catalog.Card) map[string]any {
 		"averageMinutes": card.AverageMinutes,
 		"kind":           card.Kind,
 		"poster":         card.Poster,
+		"summary":        card.Summary,
+		"genres":         genreList(card.Genres),
 		"assembling":     card.Assembling,
 	}
+}
+
+func genreList(genres []string) []string {
+	if genres == nil {
+		return []string{}
+	}
+	return genres
 }
 
 func planItems(items []queue.Item) []plan.Item {
@@ -655,6 +674,7 @@ func seasonsJSON(seasons []catalog.SeasonCard) []map[string]any {
 		out[i] = map[string]any{
 			"id":       season.ID,
 			"number":   season.Number,
+			"poster":   season.Poster,
 			"episodes": episodes,
 		}
 	}

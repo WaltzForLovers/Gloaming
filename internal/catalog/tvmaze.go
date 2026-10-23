@@ -67,7 +67,48 @@ func (c *HTTPClient) Episodes(ctx context.Context, showID int) ([]Episode, error
 			episodes[i].Runtime = *item.Runtime
 		}
 	}
+	posters, err := c.SeasonPosters(ctx, showID)
+	if err != nil {
+		return episodes, nil
+	}
+	for i := range episodes {
+		episodes[i].SeasonPoster = posters[episodes[i].Season]
+	}
 	return episodes, nil
+}
+
+func (c *HTTPClient) ShowSummary(ctx context.Context, showID int) (string, error) {
+	endpoint := fmt.Sprintf("%s/shows/%d", c.baseURL, showID)
+	var payload struct {
+		Summary *string `json:"summary"`
+	}
+	if err := c.get(ctx, endpoint, &payload); err != nil {
+		return "", err
+	}
+	if payload.Summary == nil {
+		return "", nil
+	}
+	return plainText(*payload.Summary), nil
+}
+
+func (c *HTTPClient) SeasonPosters(ctx context.Context, showID int) (map[int]string, error) {
+	endpoint := fmt.Sprintf("%s/shows/%d/seasons", c.baseURL, showID)
+	var payload []struct {
+		Number int `json:"number"`
+		Image  *struct {
+			Medium string `json:"medium"`
+		} `json:"image"`
+	}
+	if err := c.get(ctx, endpoint, &payload); err != nil {
+		return nil, err
+	}
+	posters := map[int]string{}
+	for _, season := range payload {
+		if season.Image != nil && season.Image.Medium != "" {
+			posters[season.Number] = season.Image.Medium
+		}
+	}
+	return posters, nil
 }
 
 func (c *HTTPClient) get(ctx context.Context, endpoint string, dest any) error {
@@ -91,6 +132,7 @@ type showJSON struct {
 	Runtime        *int     `json:"runtime"`
 	AverageRuntime *int     `json:"averageRuntime"`
 	Genres         []string `json:"genres"`
+	Summary        *string  `json:"summary"`
 	Image          *struct {
 		Medium string `json:"medium"`
 	} `json:"image"`
@@ -109,6 +151,9 @@ func (s showJSON) toShow() Show {
 	}
 	if s.Image != nil {
 		show.Poster = s.Image.Medium
+	}
+	if s.Summary != nil {
+		show.Summary = plainText(*s.Summary)
 	}
 	show.Genres = s.Genres
 	return show
