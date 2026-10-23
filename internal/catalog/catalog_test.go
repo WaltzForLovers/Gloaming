@@ -238,6 +238,65 @@ func TestSearchReturnsFilmsWhileShowsLag(t *testing.T) {
 	}
 }
 
+func TestSearchWaitsForFilmsAfterShows(t *testing.T) {
+	db := openDB(t)
+	shows := &fakeClient{
+		shows: map[string][]Show{"both": {{
+			ID: 1, Name: "Show", Year: 2010, AverageRuntime: 40,
+			Summary: "<p>Hello&nbsp;there</p>", Genres: []string{"Drama"},
+		}}},
+		episodes: map[int][]Episode{
+			1: {{Season: 1, Number: 1, Name: "Pilot", Runtime: 40, SeasonPoster: "http://img/s1"}},
+		},
+	}
+	films := &fakeFilms{
+		pause: 80 * time.Millisecond,
+		films: map[string][]Show{"both": {{ID: 2, Name: "Film", Year: 2002, Runtime: 90}}},
+	}
+	svc := New(db, shows).WithFilms(films)
+	svc.grace = 30 * time.Millisecond
+	svc.filmWait = 400 * time.Millisecond
+	cards, err := svc.Search(context.Background(), "both")
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, card := range cards {
+		names[card.Name] = true
+		if card.Name == "Show" {
+			if card.Summary != "Hello there" || len(card.Genres) != 1 || card.Genres[0] != "Drama" {
+				t.Fatalf("show card %+v", card)
+			}
+		}
+	}
+	if !names["Show"] || !names["Film"] {
+		t.Fatalf("%+v", cards)
+	}
+	seasons, err := db.TitleSeasons(context.Background(), cards[0].ID, 0)
+	if err != nil || len(seasons) != 1 || seasons[0].Poster != "http://img/s1" {
+		t.Fatalf("%v %+v", err, seasons)
+	}
+}
+
+func TestSearchDropsAFilmThatMissesTheWait(t *testing.T) {
+	db := openDB(t)
+	shows := &fakeClient{shows: map[string][]Show{"drop": {{ID: 1, Name: "Show", Year: 2010, AverageRuntime: 40}}}}
+	films := &fakeFilms{
+		pause: 200 * time.Millisecond,
+		films: map[string][]Show{"drop": {{ID: 2, Name: "Film", Year: 2002, Runtime: 90}}},
+	}
+	svc := New(db, shows).WithFilms(films)
+	svc.grace = 30 * time.Millisecond
+	svc.filmWait = 40 * time.Millisecond
+	cards, err := svc.Search(context.Background(), "drop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 1 || cards[0].Name != "Show" {
+		t.Fatalf("%+v", cards)
+	}
+}
+
 func TestSearchLeavesASlowSeasonAssembling(t *testing.T) {
 	db := openDB(t)
 	shows := &fakeClient{
@@ -293,9 +352,19 @@ func TestCatalogGetUsesCache(t *testing.T) {
 type fakeFilms struct {
 	films map[string][]Show
 	err   error
+	pause time.Duration
 }
 
-func (f *fakeFilms) SearchFilms(_ context.Context, query string) ([]Show, error) {
+func (f *fakeFilms) SearchFilms(ctx context.Context, query string) ([]Show, error) {
+	if f.pause > 0 {
+		timer := time.NewTimer(f.pause)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
 	if f.err != nil {
 		return nil, f.err
 	}

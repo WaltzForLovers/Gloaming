@@ -66,10 +66,55 @@ func (c *Wikidata) SearchFilms(ctx context.Context, query string) ([]Show, error
 }
 
 func (c *Wikidata) searchIDs(ctx context.Context, query string) ([]string, error) {
+	type batch struct {
+		lang string
+		ids  []string
+		err  error
+	}
+	ch := make(chan batch, 2)
+	for _, lang := range []string{"ru", "en"} {
+		go func(lang string) {
+			ids, err := c.searchLang(ctx, query, lang)
+			ch <- batch{lang: lang, ids: ids, err: err}
+		}(lang)
+	}
+	found := map[string]batch{}
+	var last error
+	ok := 0
+	for range 2 {
+		part := <-ch
+		found[part.lang] = part
+		if part.err != nil {
+			last = part.err
+			continue
+		}
+		ok++
+	}
+	if ok == 0 && last != nil {
+		return nil, last
+	}
+	seen := map[string]bool{}
+	ids := make([]string, 0, filmSearchLimit)
+	for _, lang := range []string{"ru", "en"} {
+		for _, id := range found[lang].ids {
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) > 20 {
+		ids = ids[:20]
+	}
+	return ids, nil
+}
+
+func (c *Wikidata) searchLang(ctx context.Context, query, lang string) ([]string, error) {
 	endpoint := c.wiki + "/w/api.php?" + url.Values{
 		"action":   {"wbsearchentities"},
 		"search":   {query},
-		"language": {"en"},
+		"language": {lang},
 		"format":   {"json"},
 		"type":     {"item"},
 		"limit":    {strconv.Itoa(filmSearchLimit)},
@@ -95,9 +140,9 @@ func (c *Wikidata) films(ctx context.Context, ids []string) ([]Show, []string, e
 	endpoint := c.wiki + "/w/api.php?" + url.Values{
 		"action":     {"wbgetentities"},
 		"ids":        {strings.Join(ids, "|")},
-		"props":      {"labels|claims|sitelinks"},
-		"languages":  {"en"},
-		"sitefilter": {"enwiki"},
+		"props":      {"labels|descriptions|claims|sitelinks"},
+		"languages":  {"ru|en"},
+		"sitefilter": {"ruwiki|enwiki"},
 		"format":     {"json"},
 	}.Encode()
 	var payload struct {
@@ -197,6 +242,9 @@ type wikiEntity struct {
 	Labels map[string]struct {
 		Value string `json:"value"`
 	} `json:"labels"`
+	Descriptions map[string]struct {
+		Value string `json:"value"`
+	} `json:"descriptions"`
 	Sitelinks map[string]struct {
 		Title string `json:"title"`
 	} `json:"sitelinks"`
@@ -223,11 +271,21 @@ func (e wikiEntity) film() bool {
 
 func (e wikiEntity) show(id string) (Show, string, bool) {
 	number, err := strconv.Atoi(strings.TrimPrefix(id, "Q"))
-	name := e.Labels["en"].Value
+	name := e.Labels["ru"].Value
+	if name == "" {
+		name = e.Labels["en"].Value
+	}
 	if err != nil || number <= 0 || name == "" {
 		return Show{}, "", false
 	}
-	title := e.Sitelinks["enwiki"].Title
+	title := e.Sitelinks["ruwiki"].Title
+	if title == "" {
+		title = e.Sitelinks["enwiki"].Title
+	}
+	summary := e.Descriptions["ru"].Value
+	if summary == "" {
+		summary = e.Descriptions["en"].Value
+	}
 	return Show{
 		ID:        number,
 		Source:    sourceWikidata,
@@ -235,6 +293,7 @@ func (e wikiEntity) show(id string) (Show, string, bool) {
 		Year:      e.year(),
 		Runtime:   e.minutes(),
 		WikiTitle: title,
+		Summary:   summary,
 	}, title, true
 }
 

@@ -60,7 +60,8 @@ function mapCard(card) {
     kind: card.kind || "",
     poster: card.poster || "",
     assembling: Boolean(card.assembling),
-    about: "",
+    about: card.summary || "",
+    genres: card.genres || [],
   };
 }
 
@@ -182,7 +183,9 @@ function mountDetail(root, item, queued) {
         <p class="facts"></p>
         <p class="blurb"></p>
         ${item.kind === "series"
-          ? '<a class="primary" href="title.html?id=' + item.id + '">Сезоны</a>'
+          ? '<div class="detail-actions"><a class="primary" href="title.html?id=' + item.id + '">Сезоны</a>'
+            + (item.assembling ? "" : '<button class="ghost" type="button" data-whole="' + item.id + '">Весь сериал</button>')
+            + "</div>"
           : (queued ? '<span class="queued">В очереди</span>' : '<button class="primary" type="button" data-add="">В очередь</button>')}
       </div>
     </div>`;
@@ -411,6 +414,18 @@ function bindSearch() {
   });
 
   hits.addEventListener("click", async (event) => {
+    const whole = event.target.closest("[data-whole]");
+    if (whole) {
+      try {
+        await api("/api/queue", { method: "POST", body: { titleId: Number(whole.dataset.whole), whole: true } });
+        markQueued(whole);
+      } catch (err) {
+        if (gone(err)) return;
+        if (err.code === "ALREADY_IN_QUEUE") markQueued(whole);
+        showError(err.message);
+      }
+      return;
+    }
     const add = event.target.closest("[data-add]");
     if (add) {
       const titleId = Number(add.dataset.add);
@@ -509,6 +524,57 @@ function bindSearch() {
     }
   });
 
+  function clearFilters() {
+    const box = document.querySelector(".filters");
+    box.replaceChildren();
+    box.hidden = true;
+  }
+
+  function paintFilters(cards) {
+    const box = document.querySelector(".filters");
+    const genres = [];
+    const seen = new Set();
+    cards.forEach((card) => {
+      (card.genres || []).forEach((genre) => {
+        if (!genre || seen.has(genre)) return;
+        seen.add(genre);
+        genres.push(genre);
+      });
+    });
+    box.replaceChildren();
+    if (genres.length < 2) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    const all = document.createElement("button");
+    all.type = "button";
+    all.className = "filter";
+    all.textContent = "Все";
+    all.setAttribute("aria-pressed", "true");
+    all.addEventListener("click", () => applyGenre(""));
+    box.append(all);
+    genres.forEach((genre) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "filter";
+      button.textContent = genre;
+      button.addEventListener("click", () => applyGenre(genre));
+      box.append(button);
+    });
+  }
+
+  function applyGenre(genre) {
+    const box = document.querySelector(".filters");
+    box.querySelectorAll(".filter").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.textContent === (genre || "Все")));
+    });
+    hits.querySelectorAll(".hit").forEach((hit) => {
+      const list = (hit.dataset.genres || "").split(",").filter(Boolean);
+      hit.hidden = genre !== "" && !list.includes(genre);
+    });
+  }
+
   function markQueued(button) {
     const mark = document.createElement("span");
     mark.className = "queued";
@@ -521,6 +587,7 @@ function bindSearch() {
     const token = ++seq;
     if (Array.from(query).length < 2) {
       hits.replaceChildren();
+      clearFilters();
       openId = "";
       hideManual();
       if (fromSubmit) {
@@ -536,6 +603,7 @@ function bindSearch() {
     clearError();
     hint.hidden = true;
     hideManual();
+    clearFilters();
     showSkeletons();
     const button = form.querySelector("button");
     if (fromSubmit) setBusy(button, true);
@@ -544,15 +612,18 @@ function bindSearch() {
       if (token !== seq) return;
       hits.replaceChildren();
       openId = "";
-      (data.titles || []).forEach((card, index) => {
+      const titles = data.titles || [];
+      titles.forEach((card, index) => {
         const item = mapCard(card);
         hits.append(renderHit(item, queued.has(item.titleId), index));
       });
+      paintFilters(titles);
       if ((data.titles || []).length) offerManual();
       else showManual("В каталоге такого нет. Год, число серий и минуты одной серии. Фильм — это одна серия.");
     } catch (err) {
       if (token !== seq) return;
       hits.replaceChildren();
+      clearFilters();
       if (gone(err)) return;
       if (err.code === "TITLE_NOT_FOUND") {
         clearError();
@@ -582,6 +653,7 @@ function bindSearch() {
     const hit = document.createElement("article");
     hit.className = "hit";
     hit.dataset.id = item.id;
+    hit.dataset.genres = (item.genres || []).join(",");
     hit.style.animationDelay = Math.min(index, 8) * 30 + "ms";
     hit.innerHTML = `
       <button class="hit-main" type="button">
@@ -1254,6 +1326,12 @@ function bindTitle() {
     facts.className = "facts";
     facts.textContent = (card.year || "") + " · " + runtimeLine(mapCard(card));
     copy.append(title, facts);
+    if (card.summary) {
+      const about = document.createElement("p");
+      about.className = "summary-text";
+      about.textContent = card.summary;
+      copy.append(about);
+    }
     if (card.assembling) {
       const note = document.createElement("p");
       note.className = "assembling";
@@ -1273,7 +1351,36 @@ function bindTitle() {
     head.append(poster, copy);
 
     seasons.replaceChildren();
-    (card.seasons || []).forEach((season) => {
+    const seasonList = card.seasons || [];
+    if (seasonList.length > 1 && !card.assembling) {
+      const row = document.createElement("div");
+      row.className = "whole-row";
+      const missing = seasonList.some((season) => !queuedSeasons.has(season.id));
+      if (!missing) {
+        const mark = document.createElement("span");
+        mark.className = "queued";
+        mark.textContent = "Весь сериал в очереди";
+        row.append(mark);
+      } else {
+        const button = document.createElement("button");
+        button.className = "primary";
+        button.type = "button";
+        button.textContent = "Весь сериал в очередь";
+        button.addEventListener("click", async () => {
+          clearError();
+          try {
+            await api("/api/queue", { method: "POST", body: { titleId: Number(id), whole: true } });
+            await load();
+          } catch (err) {
+            if (gone(err)) return;
+            showError(err.message);
+          }
+        });
+        row.append(button);
+      }
+      seasons.append(row);
+    }
+    seasonList.forEach((season) => {
       const block = document.createElement("section");
       block.className = "season";
       const bar = document.createElement("div");
@@ -1282,6 +1389,16 @@ function bindTitle() {
       const watched = (season.episodes || []).filter((episode) => episode.watched).length;
       const total = (season.episodes || []).length;
       heading.textContent = "Сезон " + season.number + " · " + watched + " из " + total;
+      const label = document.createElement("div");
+      label.className = "season-label";
+      if (season.poster) {
+        const img = document.createElement("img");
+        img.className = "season-poster";
+        img.alt = "";
+        img.src = season.poster;
+        label.append(img);
+      }
+      label.append(heading);
       let action;
       if (queuedSeasons.has(season.id)) {
         action = document.createElement("span");
@@ -1303,7 +1420,7 @@ function bindTitle() {
           }
         });
       }
-      bar.append(heading, action);
+      bar.append(label, action);
       block.append(bar);
       (season.episodes || []).forEach((episode) => {
         const row = document.createElement("div");

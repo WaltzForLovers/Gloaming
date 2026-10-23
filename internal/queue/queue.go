@@ -66,6 +66,24 @@ func (s *Service) AddSeason(ctx context.Context, userID, seasonID int64) (Item, 
 	return itemFrom(row), nil
 }
 
+func (s *Service) AddAll(ctx context.Context, userID, titleID int64) ([]Item, error) {
+	rows, err := s.db.AddAllSeasons(ctx, userID, titleID)
+	if errors.Is(err, storage.ErrNotFound) {
+		return nil, apperr.NotFound()
+	}
+	if errors.Is(err, storage.ErrQueueDuplicate) {
+		return nil, apperr.AlreadyInQueue()
+	}
+	if err != nil {
+		return nil, apperr.Internal(err)
+	}
+	items := make([]Item, len(rows))
+	for i, row := range rows {
+		items[i] = itemFrom(row)
+	}
+	return items, nil
+}
+
 func (s *Service) DailyMinutes(ctx context.Context, userID int64) (int, error) {
 	minutes, err := s.db.DailyMinutes(ctx, userID)
 	if errors.Is(err, storage.ErrNotFound) {

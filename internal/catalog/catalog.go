@@ -3,6 +3,8 @@ package catalog
 import (
 	"context"
 	"errors"
+	"html"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +31,8 @@ type Card struct {
 	AverageMinutes int
 	Kind           string
 	Poster         string
+	Summary        string
+	Genres         []string
 	Assembling     bool
 }
 
@@ -42,6 +46,7 @@ type Show struct {
 	Poster         string
 	WikiTitle      string
 	Genres         []string
+	Summary        string
 }
 
 type FilmClient interface {
@@ -49,10 +54,11 @@ type FilmClient interface {
 }
 
 type Episode struct {
-	Season  int
-	Number  int
-	Name    string
-	Runtime int
+	Season       int
+	Number       int
+	Name         string
+	Runtime      int
+	SeasonPoster string
 }
 
 type EpisodeCard struct {
@@ -66,6 +72,7 @@ type EpisodeCard struct {
 type SeasonCard struct {
 	ID       int64
 	Number   int
+	Poster   string
 	Episodes []EpisodeCard
 }
 
@@ -80,6 +87,7 @@ type Service struct {
 	films         FilmClient
 	timeout       time.Duration
 	grace         time.Duration
+	filmWait      time.Duration
 	episodeBudget time.Duration
 	jobs          chan catalogJob
 	pub           Publisher
@@ -98,7 +106,7 @@ type posterStore interface {
 func New(db *storage.DB, client Client) *Service {
 	return &Service{
 		db: db, client: client,
-		timeout: 8 * time.Second, grace: 1500 * time.Millisecond, episodeBudget: 1500 * time.Millisecond,
+		timeout: 8 * time.Second, grace: 1500 * time.Millisecond, filmWait: 4 * time.Second, episodeBudget: 1500 * time.Millisecond,
 	}
 }
 
@@ -183,17 +191,18 @@ func (s *Service) Search(ctx context.Context, query string) ([]Card, error) {
 	var showGot, filmGot bool
 	var grace <-chan time.Time
 	armGrace := func() {
-		if grace != nil || s.grace <= 0 || showGot == filmGot {
+		if grace != nil || showGot == filmGot {
 			return
 		}
-		useful := false
-		if showGot {
-			useful = showsFound.err == nil && len(showsFound.shows) > 0
-		} else {
-			useful = filmsFound.err == nil && len(filmsFound.shows) > 0
+		var wait time.Duration
+		switch {
+		case filmGot && filmsFound.err == nil && len(filmsFound.shows) > 0:
+			wait = s.grace
+		case showGot && showsFound.err == nil && len(showsFound.shows) > 0:
+			wait = s.filmWait
 		}
-		if useful {
-			grace = time.After(s.grace)
+		if wait > 0 {
+			grace = time.After(wait)
 		}
 	}
 	for !(showGot && filmGot) {
@@ -270,6 +279,7 @@ answered:
 		if !item.slow {
 			seeds = seedsOf(source, item.show, episodes)
 		}
+		summary := plainText(item.show.Summary)
 		saved, err := s.db.SaveCatalog(ctx, storage.Title{
 			Source:         source,
 			ExternalID:     card.ExternalID,
@@ -279,6 +289,7 @@ answered:
 			AverageMinutes: card.AverageMinutes,
 			Poster:         card.Poster,
 			Genres:         item.show.Genres,
+			Summary:        summary,
 		}, seeds, item.slow)
 		if err != nil {
 			return nil, apperr.Internal(err)
@@ -288,6 +299,11 @@ answered:
 		card.AverageMinutes = saved.AverageMinutes
 		card.Kind = KindOf(saved.EpisodeCount)
 		card.Poster = saved.Poster
+		card.Summary = saved.Summary
+		if card.Summary == "" {
+			card.Summary = summary
+		}
+		card.Genres = item.show.Genres
 		card.Assembling = saved.Assembling
 		if saved.Assembling || (item.show.WikiTitle != "" && saved.Poster == "") {
 			s.enqueue(saved.ID, item.show.WikiTitle)
@@ -372,7 +388,7 @@ func seedsOf(source string, show Show, episodes []Episode) []storage.EpisodeSeed
 		if number < 1 {
 			number = i + 1
 		}
-		seeds[i] = storage.EpisodeSeed{SeasonNumber: season, Number: number, Name: episode.Name, Runtime: episode.Runtime}
+		seeds[i] = storage.EpisodeSeed{SeasonNumber: season, Number: number, Name: episode.Name, Runtime: episode.Runtime, Poster: episode.SeasonPoster}
 	}
 	return seeds
 }
@@ -397,9 +413,11 @@ func (s *Service) Detail(ctx context.Context, userID, id int64) (Card, []SeasonC
 		card.Assembling = true
 		s.enqueue(id, "")
 	}
+	card.Summary = s.fillSummary(ctx, title, card.Summary)
+	seasons = s.fillSeasonArt(ctx, title, seasons)
 	out := make([]SeasonCard, len(seasons))
 	for i, season := range seasons {
-		out[i] = SeasonCard{ID: season.ID, Number: season.Number, Episodes: make([]EpisodeCard, len(season.Episodes))}
+		out[i] = SeasonCard{ID: season.ID, Number: season.Number, Poster: season.Poster, Episodes: make([]EpisodeCard, len(season.Episodes))}
 		for j, episode := range season.Episodes {
 			out[i].Episodes[j] = EpisodeCard{
 				ID: episode.ID, Number: episode.Number, Name: episode.Name, Runtime: episode.Runtime, Watched: episode.Watched,
@@ -438,6 +456,7 @@ func (s *Service) Get(ctx context.Context, id int64) (Card, error) {
 		AverageMinutes: title.AverageMinutes,
 		Kind:           KindOf(title.EpisodeCount),
 		Poster:         title.Poster,
+		Summary:        title.Summary,
 		Assembling:     title.Assembling,
 	}, nil
 }
@@ -509,8 +528,87 @@ func cardFrom(title storage.Title) Card {
 		AverageMinutes: title.AverageMinutes,
 		Kind:           KindOf(title.EpisodeCount),
 		Poster:         title.Poster,
+		Summary:        title.Summary,
 		Assembling:     title.Assembling,
 	}
+}
+
+var markup = regexp.MustCompile(`(?s)<[^>]*>`)
+
+func plainText(raw string) string {
+	raw = strings.NewReplacer("<br>", " ", "<br/>", " ", "<br />", " ", "</p>", " ", "</div>", " ").Replace(raw)
+	raw = markup.ReplaceAllString(raw, " ")
+	raw = html.UnescapeString(raw)
+	raw = strings.Join(strings.Fields(raw), " ")
+	if utf8.RuneCountInString(raw) > 700 {
+		raw = string([]rune(raw)[:699]) + "…"
+	}
+	return raw
+}
+
+type seasonArt interface {
+	SeasonPosters(ctx context.Context, showID int) (map[int]string, error)
+}
+
+type showText interface {
+	ShowSummary(ctx context.Context, showID int) (string, error)
+}
+
+func (s *Service) fillSummary(ctx context.Context, title storage.Title, summary string) string {
+	if summary != "" || title.Source != sourceTVMaze || title.ExternalID <= 0 {
+		return summary
+	}
+	text, ok := s.client.(showText)
+	if !ok {
+		return summary
+	}
+	textCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	got, err := text.ShowSummary(textCtx, title.ExternalID)
+	if err != nil || got == "" {
+		return summary
+	}
+	if err := s.db.SetSummary(ctx, title.ID, got); err != nil {
+		return summary
+	}
+	return got
+}
+
+func (s *Service) fillSeasonArt(ctx context.Context, title storage.Title, seasons []storage.SeasonRow) []storage.SeasonRow {
+	art, ok := s.client.(seasonArt)
+	if !ok || title.Source != sourceTVMaze || title.ExternalID <= 0 {
+		return seasons
+	}
+	missing := false
+	for _, season := range seasons {
+		if season.Poster == "" {
+			missing = true
+			break
+		}
+	}
+	if !missing {
+		return seasons
+	}
+	artCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	posters, err := art.SeasonPosters(artCtx, title.ExternalID)
+	if err != nil || len(posters) == 0 {
+		return seasons
+	}
+	for i, season := range seasons {
+		if season.Poster != "" {
+			continue
+		}
+		poster := posters[season.Number]
+		if poster == "" {
+			continue
+		}
+		if err := s.db.SetSeasonPoster(ctx, season.ID, poster); err != nil {
+			continue
+		}
+		seasons[i].Poster = poster
+	}
+	return seasons
 }
 
 func meanRuntime(episodes []Episode) int {
