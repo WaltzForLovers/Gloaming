@@ -96,14 +96,34 @@ function posterNode(item, extra) {
   return img;
 }
 
+function readPickPage() {
+  try {
+    return Number(sessionStorage.getItem("gloaming.pickPage")) || 0;
+  } catch (err) {
+    return 0;
+  }
+}
+
+function rememberPickPage(start) {
+  try {
+    sessionStorage.setItem("gloaming.pickPage", String(start));
+  } catch (err) {
+    /* a private window has no storage; the page still turns for this visit */
+  }
+}
+
 function paintPicks(list, cards) {
   const all = cards || [];
   const size = 6;
-  let start = 0;
   const more = list.parentElement && list.parentElement.querySelector(".pick-more");
+  let start = readPickPage();
+  if (start < 0 || start >= all.length || start % size !== 0) start = 0;
   const draw = () => {
+    rememberPickPage(start);
+    const shown = all.slice(start, start + size);
+    list.dataset.pickSig = start + ":" + shown.map((card) => card.titleId || card.id).join(",");
     list.replaceChildren();
-    all.slice(start, start + size).forEach((card) => {
+    shown.forEach((card) => {
       const link = document.createElement("a");
       link.className = "pick";
       link.href = "title.html?id=" + (card.titleId || card.id);
@@ -129,6 +149,9 @@ function paintPicks(list, cards) {
       draw();
     };
   }
+  const shown = all.slice(start, start + size);
+  const signature = start + ":" + shown.map((card) => card.titleId || card.id).join(",");
+  if (list.dataset.pickSig === signature && list.children.length) return;
   draw();
 }
 
