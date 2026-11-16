@@ -97,42 +97,39 @@ function posterNode(item, extra) {
 }
 
 function paintPicks(list, cards) {
-  list.replaceChildren();
-  (cards || []).forEach((card) => {
-    const link = document.createElement("a");
-    link.className = "pick";
-    link.href = "title.html?id=" + (card.titleId || card.id);
-    link.append(posterNode(card, "poster-shelf"));
-    const name = document.createElement("span");
-    name.className = "pick-name";
-    name.textContent = card.name + (card.year ? " · " + card.year : "");
-    link.append(name);
-    if (card.reason) {
-      const why = document.createElement("span");
-      why.className = "pick-why";
-      why.textContent = card.reason;
-      link.append(why);
-    }
-    list.append(link);
-  });
+  const all = cards || [];
+  const size = 6;
+  let start = 0;
   const more = list.parentElement && list.parentElement.querySelector(".pick-more");
-  if (!more) return;
-  const update = () => {
-    more.hidden = list.scrollWidth - list.clientWidth - list.scrollLeft <= 8;
-  };
-  if (!more.dataset.bound) {
-    more.dataset.bound = "1";
-    more.addEventListener("click", () => {
-      const origin = list.offsetLeft;
-      const cards = [...list.querySelectorAll(".pick")];
-      const edge = list.scrollLeft + list.clientWidth;
-      const next = cards.find((card) => card.offsetLeft - origin >= edge - 8);
-      list.scrollTo({ left: next ? next.offsetLeft - origin : 0, behavior: reduce ? "auto" : "smooth" });
+  const draw = () => {
+    list.replaceChildren();
+    all.slice(start, start + size).forEach((card) => {
+      const link = document.createElement("a");
+      link.className = "pick";
+      link.href = "title.html?id=" + (card.titleId || card.id);
+      link.append(posterNode(card, "poster-shelf"));
+      const name = document.createElement("span");
+      name.className = "pick-name";
+      name.textContent = card.name + (card.year ? " · " + card.year : "");
+      link.append(name);
+      if (card.reason) {
+        const why = document.createElement("span");
+        why.className = "pick-why";
+        why.textContent = card.reason;
+        link.append(why);
+      }
+      list.append(link);
     });
-    list.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
+    if (more) more.hidden = all.length <= size;
+  };
+  if (more) {
+    more.onclick = () => {
+      start += size;
+      if (start >= all.length) start = 0;
+      draw();
+    };
   }
-  requestAnimationFrame(update);
+  draw();
 }
 
 function known(item) {
