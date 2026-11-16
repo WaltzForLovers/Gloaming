@@ -24,7 +24,7 @@ body {
     radial-gradient(ellipse 130% 100% at 50% 45%, transparent 42%, rgba(0, 0, 0, 0.55) 100%);
   background-attachment: fixed;
   color: var(--text);
-  font: 16px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 16px/1.5 "Avenir Next", Avenir, "Segoe UI", sans-serif;
   font-variant-numeric: tabular-nums;
 }
 
@@ -70,14 +70,13 @@ a:hover { text-decoration: underline; }
   padding: 22px 20px 0;
 }
 
-.brand-row { display: flex; align-items: baseline; gap: 22px; }
+.brand-row { display: flex; align-items: center; gap: 20px; }
 
 .brand {
   color: var(--accent);
-  font-family: "Iowan Old Style", Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: -0.02em;
   text-decoration: none;
 }
 
@@ -86,6 +85,7 @@ a:hover { text-decoration: underline; }
 .nav a {
   color: var(--muted);
   margin-right: 16px;
+  font-size: 15px;
   text-decoration: none;
 }
 
@@ -134,9 +134,9 @@ a:hover { text-decoration: underline; }
 }
 
 h1 {
-  margin: 0 0 18px;
-  font-size: 28px;
-  font-weight: 500;
+  margin: 0 0 14px;
+  font-size: 26px;
+  font-weight: 600;
   letter-spacing: -0.02em;
 }
 
@@ -337,16 +337,18 @@ img.poster { -webkit-user-drag: none; }
   align-items: end;
 }
 
-.summary { margin: -6px 0 18px; color: var(--muted); }
+.summary { margin: 0 0 4px; color: var(--muted); }
 
-.rhythm { margin: 0 0 16px; }
+.tune { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; margin: 16px 0 4px; }
+.rhythm { margin: 0; }
 .rhythm label { max-width: 140px; margin: 0; }
-.rhythm-line { margin: -8px 0 14px; }
-.letter { color: var(--muted); margin: -8px 0 14px; }
+.rhythm-line { display: flex; flex-direction: column; gap: 2px; margin: 0 0 4px; }
+.letter { color: var(--muted); margin: 8px 0 0; }
 .notice { color: var(--muted); }
-.account-mail { display: flex; align-items: flex-end; gap: 14px; margin: 0 0 18px; }
-.account-mail label { flex: 1; max-width: 320px; margin: 0; }
-.account-mail .text-btn { margin-bottom: 12px; }
+.account-mail { display: flex; align-items: flex-end; gap: 14px; margin: 14px 0 0; }
+.account-mail label { flex: 1; max-width: 240px; margin: 0; font-size: 13px; }
+.account-mail input { padding: 8px 12px; }
+.account-mail .text-btn { margin-bottom: 8px; }
 .picks { margin-top: 28px; }
 .picks h2 { margin: 0 0 10px; font-size: 1rem; font-weight: 500; }
 .pick-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 18px 14px; }
@@ -359,7 +361,7 @@ img.poster { -webkit-user-drag: none; }
 .assembling { color: var(--muted); }
 
 .time label { flex: 0 0 92px; margin: 0; }
-.time .primary { width: auto; margin: 0 0 0 auto; white-space: nowrap; }
+.time .primary { width: auto; margin: 0 0 0 6px; white-space: nowrap; }
 
 .plan { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--move) var(--ease); }
 .plan.open { grid-template-rows: 1fr; }
@@ -459,8 +461,13 @@ img.poster { -webkit-user-drag: none; }
   align-items: center;
   justify-content: safe center;
 }
-.page.is-empty .account-mail { width: min(400px, 100%); }
-.page.is-empty .queue-body { display: none; }
+.page.is-empty .account-mail { width: 100%; }
+.page.is-empty .queue-body {
+  display: block;
+  width: min(400px, 100%);
+  margin-bottom: 28px;
+}
+.page.is-empty .queue-body > :not(.account-mail):not(.account-mail-note) { display: none; }
 .page.is-empty .empty-gate {
   display: flex;
   flex-direction: column;
@@ -617,6 +624,7 @@ a.primary:hover { text-decoration: none; }
 .episode .watched { color: var(--muted); text-decoration: line-through; }
 
 @media (max-width: 640px) {
+  .tune { align-items: stretch; width: 100%; }
   .search-form, .time, .manual-fields, .account-mail { flex-direction: column; align-items: stretch; }
   .account-mail label { max-width: none; }
   .account-mail .text-btn { margin-bottom: 0; }

@@ -22,24 +22,26 @@
     </div>
   </header>
   <main class="page">
-    <form class="account-mail">
-      <label>Email<input name="email" type="email" autocomplete="email" spellcheck="false"></label>
-      <button class="text-btn" type="submit">Save</button>
-    </form>
-    <p class="notice account-mail-note" hidden></p>
     <div class="queue-body">
       <h1>Queue</h1>
       <p class="summary"></p>
       <p class="rhythm-line"></p>
       <p class="letter" hidden></p>
-      <form class="rhythm">
-        <label>Minutes a day<input name="daily" inputmode="numeric" placeholder="40" autocomplete="off"></label>
+      <div class="tune">
+        <form class="rhythm">
+          <label>Minutes a day<input name="daily" inputmode="numeric" placeholder="40" autocomplete="off"></label>
+        </form>
+        <form class="time">
+          <label>Hours<input name="hours" inputmode="numeric" value="1"></label>
+          <label>Minutes<input name="minutes" inputmode="numeric" value="30"></label>
+          <button class="primary" type="submit">Build plan</button>
+        </form>
+      </div>
+      <form class="account-mail">
+        <label>Email<input name="email" type="email" autocomplete="email" spellcheck="false"></label>
+        <button class="text-btn" type="submit">Save</button>
       </form>
-      <form class="time">
-        <label>Hours<input name="hours" inputmode="numeric" value="1"></label>
-        <label>Minutes<input name="minutes" inputmode="numeric" value="30"></label>
-        <button class="primary" type="submit">Build plan</button>
-      </form>
+      <p class="notice account-mail-note" hidden></p>
       <div class="alert"><div><p></p></div></div>
       <section class="plan">
         <div class="plan-inner">

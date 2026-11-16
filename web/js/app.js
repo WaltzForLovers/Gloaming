@@ -139,8 +139,12 @@ function rhythmText(rows, daily) {
     return "Nothing in the queue has a runtime to count yet.";
   }
   if (daily <= 0) return "How many minutes a day do you watch? I’ll show when the current season ends and when the whole queue ends.";
-  const tail = unknown ? " Titles without a runtime are left out." : "";
-  return "At " + daily + " min a day, “" + current.name + "” ends " + finishWhen(finishOffset(current.remainingMinutes, daily)) + ". The whole queue ends " + finishWhen(finishOffset(queueMinutes, daily)) + "." + tail;
+  const lines = [
+    "“" + current.name + "” ends " + finishWhen(finishOffset(current.remainingMinutes, daily)) + ".",
+    "The whole queue ends " + finishWhen(finishOffset(queueMinutes, daily)) + "."
+  ];
+  if (unknown) lines.push("Titles without a runtime are left out.");
+  return lines;
 }
 
 function readCount(value) {
@@ -719,10 +723,20 @@ function bindQueue() {
     return text;
   }
 
+  function showRhythm(text) {
+    const lines = text == null || text === "" ? [] : (Array.isArray(text) ? text : [text]);
+    rhythmLine.replaceChildren();
+    lines.forEach((line) => {
+      const span = document.createElement("span");
+      span.textContent = line;
+      rhythmLine.append(span);
+    });
+  }
+
   function render(skipFlipId) {
     page.classList.toggle("is-empty", items.length === 0);
     summary.textContent = items.length ? summaryText(items) : "";
-    rhythmLine.textContent = items.length ? rhythmText(items, dailyMinutes) : "";
+    showRhythm(items.length ? rhythmText(items, dailyMinutes) : "");
     if (letterLine) {
       letterLine.hidden = letterText === "";
       letterLine.textContent = letterText ? "Letter: " + letterText : "";
@@ -1027,11 +1041,11 @@ function bindQueue() {
     clearTimeout(paceTimer);
     const value = readDaily(rhythmForm);
     if (value == null) {
-      rhythmLine.textContent = "Enter 0 to 1440 minutes a day.";
+      showRhythm("Enter 0 to 1440 minutes a day.");
       return;
     }
     dailyMinutes = value;
-    rhythmLine.textContent = items.length ? rhythmText(items, dailyMinutes) : "";
+    showRhythm(items.length ? rhythmText(items, dailyMinutes) : "");
     paceTimer = setTimeout(() => savePace(value), 400);
   });
 
@@ -1040,11 +1054,11 @@ function bindQueue() {
     clearTimeout(paceTimer);
     const value = readDaily(rhythmForm);
     if (value == null) {
-      rhythmLine.textContent = "Enter 0 to 1440 minutes a day.";
+      showRhythm("Enter 0 to 1440 minutes a day.");
       return;
     }
     dailyMinutes = value;
-    rhythmLine.textContent = items.length ? rhythmText(items, dailyMinutes) : "";
+    showRhythm(items.length ? rhythmText(items, dailyMinutes) : "");
     savePace(value);
   });
 
