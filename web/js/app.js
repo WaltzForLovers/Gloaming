@@ -71,6 +71,7 @@ function mapItem(item) {
   card.titleId = item.titleId;
   card.seasonId = item.seasonId || 0;
   card.seasonNumber = item.seasonNumber || 0;
+  card.seasonPoster = item.seasonPoster || "";
   card.totalEpisodes = item.seasonEpisodes || item.episodeCount;
   card.remainingEpisodes = item.remainingEpisodes;
   card.remainingMinutes = item.remainingMinutes || 0;
@@ -393,9 +394,47 @@ function bindSearch() {
   let timer = 0;
   let seq = 0;
   let queued = new Set();
+  const discover = document.querySelector(".discover");
+  const discoverList = discover.querySelector(".pick-list");
+
+  function paintDiscover(cards) {
+    discoverList.replaceChildren();
+    cards.slice(0, 12).forEach((card) => {
+      const link = document.createElement("a");
+      link.className = "pick";
+      link.href = "title.html?id=" + (card.titleId || card.id);
+      link.append(posterNode(card, "poster-shelf"));
+      const name = document.createElement("span");
+      name.className = "pick-name";
+      name.textContent = card.name + (card.year ? " · " + card.year : "");
+      link.append(name);
+      if (card.reason) {
+        const why = document.createElement("span");
+        why.className = "pick-why";
+        why.textContent = card.reason;
+        link.append(why);
+      }
+      discoverList.append(link);
+    });
+    discover.hidden = discoverList.children.length === 0 || Array.from(form.q.value.trim()).length >= 2;
+  }
+
+  document.querySelectorAll(".try").forEach((button) => {
+    button.addEventListener("click", () => {
+      form.q.value = button.textContent;
+      clearTimeout(timer);
+      runSearch(true);
+    });
+  });
 
   api("/api/queue").then((data) => {
     queued = new Set((data.items || []).map((item) => item.titleId));
+    if ((data.suggestions || []).length) {
+      paintDiscover(data.suggestions);
+    } else {
+      discover.querySelector("h2").textContent = "Start with one of these";
+      fetchFeatured().then(paintDiscover).catch(() => {});
+    }
     hits.querySelectorAll("[data-add]").forEach((button) => {
       if (queued.has(Number(button.dataset.add))) markQueued(button);
     });
@@ -591,18 +630,15 @@ function bindSearch() {
       clearFilters();
       openId = "";
       hideManual();
-      if (fromSubmit) {
-        hint.hidden = true;
-        showError("Enter at least two characters.");
-      } else {
-        clearError();
-        hint.hidden = false;
-        hint.textContent = "Enter a title";
-      }
+      hint.hidden = true;
+      discover.hidden = discoverList.children.length === 0;
+      if (fromSubmit) showError("Enter at least two characters.");
+      else clearError();
       return;
     }
     clearError();
     hint.hidden = true;
+    discover.hidden = true;
     hideManual();
     clearFilters();
     showSkeletons();
@@ -820,7 +856,12 @@ function bindQueue() {
       posterLink.className = "q-poster";
       posterLink.href = href;
       posterLink.tabIndex = -1;
-      posterLink.append(posterNode(item));
+      if (item.seasonPoster && item.seasonPoster !== item.poster) {
+        posterLink.classList.add("stack");
+        posterLink.append(posterNode(item, "stack-back"), posterNode(Object.assign({}, item, { poster: item.seasonPoster }), "stack-front"));
+      } else {
+        posterLink.append(posterNode(item));
+      }
       row.querySelector(".grip").after(posterLink);
       row.querySelector(".q-open").href = href;
       row.querySelector(".hit-name").textContent = item.name;

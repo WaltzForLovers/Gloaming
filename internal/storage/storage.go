@@ -86,6 +86,7 @@ type QueueRow struct {
 	Title         Title
 	SeasonID      int64
 	SeasonNumber  int
+	SeasonPoster  string
 	SeasonCount   int
 	TotalEpisodes int
 	Remaining     []int
@@ -1029,14 +1030,14 @@ func (db *DB) DeleteQueueItem(ctx context.Context, userID, itemID int64) error {
 func (db *DB) queueRow(ctx context.Context, userID, itemID int64) (QueueRow, error) {
 	var row QueueRow
 	err := db.sql.QueryRowContext(ctx, `
-SELECT q.id, q.position, s.id, s.number,
+SELECT q.id, q.position, s.id, s.number, s.poster,
        t.id, t.external_id, t.source, t.name, t.year, t.episode_count, t.average_minutes, t.poster,
        (SELECT COUNT(*) FROM seasons s2 WHERE s2.title_id = t.id)
 FROM queue_items q
 JOIN seasons s ON s.id = q.season_id
 JOIN titles t ON t.id = s.title_id
 WHERE q.user_id = $1 AND q.id = $2`, userID, itemID).Scan(
-		&row.ID, &row.Position, &row.SeasonID, &row.SeasonNumber,
+		&row.ID, &row.Position, &row.SeasonID, &row.SeasonNumber, &row.SeasonPoster,
 		&row.Title.ID, &row.Title.ExternalID, &row.Title.Source, &row.Title.Name, &row.Title.Year, &row.Title.EpisodeCount, &row.Title.AverageMinutes, &row.Title.Poster,
 		&row.SeasonCount)
 	if errors.Is(err, sql.ErrNoRows) {

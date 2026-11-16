@@ -25,6 +25,7 @@ type Item struct {
 	Remaining         []int
 	AverageMinutes    int
 	Poster            string
+	SeasonPoster      string
 }
 
 type Service struct {
@@ -188,5 +189,6 @@ func itemFrom(row storage.QueueRow) Item {
 		Remaining:         remaining,
 		AverageMinutes:    row.Title.AverageMinutes,
 		Poster:            row.Title.Poster,
+		SeasonPoster:      row.SeasonPoster,
 	}
 }

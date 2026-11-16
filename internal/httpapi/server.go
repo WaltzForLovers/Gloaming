@@ -735,5 +735,6 @@ func itemJSON(item queue.Item) map[string]any {
 		"averageMinutes":    item.AverageMinutes,
 		"kind":              catalog.KindOf(item.EpisodeCount),
 		"poster":            item.Poster,
+		"seasonPoster":      item.SeasonPoster,
 	}
 }
