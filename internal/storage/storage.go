@@ -759,6 +759,40 @@ ON CONFLICT DO NOTHING`, userID, episodeID)
 	return err
 }
 
+func (db *DB) SetWatchedMany(ctx context.Context, userID int64, episodeIDs []int64, on bool) error {
+	unique := make([]int64, 0, len(episodeIDs))
+	seen := make(map[int64]bool, len(episodeIDs))
+	for _, id := range episodeIDs {
+		if !seen[id] {
+			seen[id] = true
+			unique = append(unique, id)
+		}
+	}
+	tx, err := db.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var found int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM episodes WHERE id = ANY($1::bigint[])`, unique).Scan(&found); err != nil {
+		return err
+	}
+	if found != len(unique) {
+		return ErrNotFound
+	}
+	if on {
+		_, err = tx.ExecContext(ctx, `
+INSERT INTO watched (user_id, episode_id) SELECT $1, unnest($2::bigint[])
+ON CONFLICT DO NOTHING`, userID, unique)
+	} else {
+		_, err = tx.ExecContext(ctx, `DELETE FROM watched WHERE user_id = $1 AND episode_id = ANY($2::bigint[])`, userID, unique)
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (db *DB) AddQueueItem(ctx context.Context, userID, titleID int64) (QueueRow, error) {
 	seasons, err := db.seasonIDs(ctx, titleID)
 	if err != nil {

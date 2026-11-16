@@ -1480,9 +1480,22 @@ function bindTitle() {
           }
         });
       }
-      bar.append(label, action);
+      const episodes = season.episodes || [];
+      const tools = document.createElement("div");
+      tools.className = "season-tools";
+      if (total > 0) {
+        const all = watched === total;
+        const sweep = document.createElement("button");
+        sweep.className = "text-btn";
+        sweep.type = "button";
+        sweep.textContent = all ? "Clear season" : "Season watched";
+        sweep.addEventListener("click", () => markMany(sweep, episodes.map((episode) => episode.id), !all));
+        tools.append(sweep);
+      }
+      tools.append(action);
+      bar.append(label, tools);
       block.append(bar);
-      (season.episodes || []).forEach((episode) => {
+      episodes.forEach((episode, index) => {
         const row = document.createElement("div");
         row.className = "episode";
         const name = document.createElement("span");
@@ -1501,11 +1514,36 @@ function bindTitle() {
             if (!gone(err)) showError(err.message);
           }
         });
-        row.append(name, mark);
+        const before = episodes.slice(0, index + 1);
+        if (index > 0 && before.some((item) => !item.watched)) {
+          const upTo = document.createElement("button");
+          upTo.className = "text-btn up-to";
+          upTo.type = "button";
+          upTo.textContent = "Watched up to here";
+          upTo.addEventListener("click", () => markMany(upTo, before.map((item) => item.id), true));
+          row.append(name, upTo, mark);
+        } else {
+          row.append(name, mark);
+        }
         block.append(row);
       });
       seasons.append(block);
     });
+  }
+
+  async function markMany(button, ids, watched) {
+    clearError();
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = "Saving…";
+    try {
+      await api("/api/episodes/watched", { method: "POST", body: { ids, watched } });
+      await load();
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = label;
+      if (!gone(err)) showError(err.message);
+    }
   }
 
   load().then(() => {

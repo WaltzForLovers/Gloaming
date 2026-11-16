@@ -743,6 +743,11 @@ a.primary:hover { text-decoration: none; }
 .filter[aria-pressed="true"] { color: var(--text); border-color: var(--text); }
 .hit[hidden] { display: none; }
 .season { scroll-margin-top: 24px; }
+.season-tools { display: flex; align-items: center; gap: 16px; }
+.episode .up-to { color: var(--faint); font-size: 13px; opacity: 0; transition: opacity var(--fast) var(--ease), color var(--fast) var(--ease); }
+.episode:hover .up-to, .episode .up-to:focus-visible { opacity: 1; }
+.episode .up-to:hover { color: var(--accent); }
+@media (hover: none) { .episode .up-to { opacity: 1; } }
 .episode { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
 .episode .name { flex: 1; }
 .episode .watched { color: var(--muted); text-decoration: line-through; }

@@ -528,6 +528,21 @@ func (s *Service) SetWatched(ctx context.Context, userID, episodeID int64, on bo
 	return nil
 }
 
+func (s *Service) SetWatchedMany(ctx context.Context, userID int64, episodeIDs []int64, on bool) error {
+	if len(episodeIDs) == 0 || len(episodeIDs) > 1000 {
+		return apperr.Validation("Pick 1 to 1000 episodes.")
+	}
+	err := s.db.SetWatchedMany(ctx, userID, episodeIDs, on)
+	if errors.Is(err, storage.ErrNotFound) {
+		return apperr.NotFound()
+	}
+	if err != nil {
+		return apperr.Internal(err)
+	}
+	s.afterWatch(ctx, userID, episodeIDs[len(episodeIDs)-1], on)
+	return nil
+}
+
 func (s *Service) Get(ctx context.Context, id int64) (Card, error) {
 	title, err := s.db.TitleByID(ctx, id)
 	if errors.Is(err, storage.ErrNotFound) {

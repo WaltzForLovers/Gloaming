@@ -240,6 +240,50 @@ func TestWatchedEpisodesLeaveTheRemainder(t *testing.T) {
 	}
 }
 
+func TestSetWatchedManyMarksAndClearsTogether(t *testing.T) {
+	db := open(t)
+	ctx := context.Background()
+	user, err := db.CreateUser(ctx, "ann", "hash", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	title, err := db.UpsertTitle(ctx, Title{ExternalID: 1, Name: "Show", Year: 2010, EpisodeCount: 3, AverageMinutes: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.ReplaceEpisodes(ctx, title.ID, []EpisodeSeed{
+		{SeasonNumber: 1, Number: 1, Name: "One", Runtime: 40},
+		{SeasonNumber: 1, Number: 2, Name: "Two", Runtime: 50},
+		{SeasonNumber: 1, Number: 3, Name: "Three", Runtime: 60},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seasons, err := db.TitleSeasons(ctx, title.ID, user.ID)
+	if err != nil || len(seasons) != 1 || len(seasons[0].Episodes) != 3 {
+		t.Fatalf("%+v %v", seasons, err)
+	}
+	eps := seasons[0].Episodes
+	if err := db.SetWatchedMany(ctx, user.ID, []int64{eps[0].ID, eps[1].ID, eps[0].ID}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetWatchedMany(ctx, user.ID, []int64{eps[2].ID, 999999}, true); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown episode: %v", err)
+	}
+	seasons, _ = db.TitleSeasons(ctx, title.ID, user.ID)
+	got := []bool{seasons[0].Episodes[0].Watched, seasons[0].Episodes[1].Watched, seasons[0].Episodes[2].Watched}
+	if !got[0] || !got[1] || got[2] {
+		t.Fatalf("after mark: %v", got)
+	}
+	if err := db.SetWatchedMany(ctx, user.ID, []int64{eps[0].ID, eps[1].ID}, false); err != nil {
+		t.Fatal(err)
+	}
+	seasons, _ = db.TitleSeasons(ctx, title.ID, user.ID)
+	if seasons[0].Episodes[0].Watched || seasons[0].Episodes[1].Watched {
+		t.Fatalf("after clear: %+v", seasons[0].Episodes)
+	}
+}
+
 func TestManualTitleStaysWithItsOwner(t *testing.T) {
 	db := open(t)
 	ctx := context.Background()
