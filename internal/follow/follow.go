@@ -57,7 +57,7 @@ func Refresh(ctx context.Context, db *storage.DB, userID int64) error {
 	return db.ReplaceSuggestions(ctx, userID, Picks(queued, pool, PickLimit))
 }
 
-const PickLimit = 6
+const PickLimit = 24
 
 type scored struct {
 	title  storage.Title
