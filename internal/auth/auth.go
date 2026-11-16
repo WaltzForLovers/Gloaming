@@ -52,7 +52,7 @@ func (s *Service) Register(ctx context.Context, username, password, email string
 	}
 	email = normalizeEmail(email)
 	if !validEmail(email) {
-		return User{}, apperr.Validation("Укажите адрес почты.")
+		return User{}, apperr.Validation("Enter an email address.")
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	if err != nil {
@@ -63,12 +63,12 @@ func (s *Service) Register(ctx context.Context, username, password, email string
 		return User{}, apperr.UserExists()
 	}
 	if errors.Is(err, storage.ErrEmailTaken) {
-		return User{}, apperr.Validation("Такой адрес уже есть.")
+		return User{}, apperr.Validation("That address is already in use.")
 	}
 	if err != nil {
 		return User{}, apperr.Internal(err)
 	}
-	s.send(ctx, email, "Аккаунт Gloaming", "Аккаунт "+stored.Username+" создан.\nЕсли это были не вы, ничего делать не нужно.\n")
+	s.send(ctx, email, "Gloaming account", "Account "+stored.Username+" is ready.\nIf this was not you, you do not need to do anything.\n")
 	return User{ID: stored.ID, Username: stored.Username}, nil
 }
 
@@ -86,7 +86,7 @@ func (s *Service) Email(ctx context.Context, userID int64) (string, error) {
 func (s *Service) SetEmail(ctx context.Context, userID int64, username, email string) (string, error) {
 	email = normalizeEmail(email)
 	if email != "" && !validEmail(email) {
-		return "", apperr.Validation("Укажите адрес почты.")
+		return "", apperr.Validation("Enter an email address.")
 	}
 	current, err := s.Email(ctx, userID)
 	if err != nil {
@@ -97,7 +97,7 @@ func (s *Service) SetEmail(ctx context.Context, userID int64, username, email st
 	}
 	if err := s.db.SetEmail(ctx, userID, email); err != nil {
 		if errors.Is(err, storage.ErrEmailTaken) {
-			return "", apperr.Validation("Такой адрес уже есть.")
+			return "", apperr.Validation("That address is already in use.")
 		}
 		if errors.Is(err, storage.ErrNotFound) {
 			return "", apperr.Unauthorized()
@@ -105,7 +105,7 @@ func (s *Service) SetEmail(ctx context.Context, userID int64, username, email st
 		return "", apperr.Internal(err)
 	}
 	if email != "" {
-		_ = s.send(ctx, email, "Адрес для писем", "На аккаунт "+username+" указан этот адрес.\nПисьмо про четверг будет приходить сюда.\n")
+		_ = s.send(ctx, email, "Address for letters", "This address is now on account "+username+".\nThe Thursday letter will come here.\n")
 	}
 	return email, nil
 }
@@ -113,7 +113,7 @@ func (s *Service) SetEmail(ctx context.Context, userID int64, username, email st
 func (s *Service) Forgot(ctx context.Context, email string) error {
 	email = normalizeEmail(email)
 	if !validEmail(email) {
-		return apperr.Validation("Укажите адрес почты.")
+		return apperr.Validation("Enter an email address.")
 	}
 	userID, err := s.db.UserByEmail(ctx, email)
 	if errors.Is(err, storage.ErrNotFound) {
@@ -131,7 +131,7 @@ func (s *Service) Forgot(ctx context.Context, email string) error {
 		return apperr.Internal(err)
 	}
 	link := s.public + "/reset.html?token=" + token
-	if err := s.send(ctx, email, "Смена пароля", "Чтобы задать новый пароль, откройте ссылку. Она действует один час.\n\n"+link+"\n"); err != nil {
+	if err := s.send(ctx, email, "Password reset", "To set a new password, open this link. It works for one hour.\n\n"+link+"\n"); err != nil {
 		return apperr.Internal(err)
 	}
 	return nil
@@ -143,12 +143,12 @@ func (s *Service) Reset(ctx context.Context, token, password string) error {
 	}
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return apperr.Validation("Ссылка устарела. Запросите новую.")
+		return apperr.Validation("This link has expired. Request a new one.")
 	}
 	sum := sha256.Sum256([]byte(token))
 	userID, err := s.db.ConsumeReset(ctx, hex.EncodeToString(sum[:]), s.now())
 	if errors.Is(err, storage.ErrNotFound) {
-		return apperr.Validation("Ссылка устарела. Запросите новую.")
+		return apperr.Validation("This link has expired. Request a new one.")
 	}
 	if err != nil {
 		return apperr.Internal(err)
@@ -222,13 +222,13 @@ func (s *Service) User(ctx context.Context, token string) (User, error) {
 func validate(username, password string) error {
 	n := utf8.RuneCountInString(username)
 	if n < 3 || n > 32 || !onlyNameRunes(username) {
-		return apperr.Validation("Имя: от 3 до 32 символов, только буквы, цифры и подчёркивание.")
+		return apperr.Validation("Name: 3 to 32 characters, letters, digits, and underscore only.")
 	}
 	if utf8.RuneCountInString(password) < 8 {
-		return apperr.Validation("Пароль: не короче 8 символов.")
+		return apperr.Validation("Password: at least 8 characters.")
 	}
 	if len(password) > maxPassword {
-		return apperr.Validation("Пароль слишком длинный.")
+		return apperr.Validation("Password is too long.")
 	}
 	return nil
 }

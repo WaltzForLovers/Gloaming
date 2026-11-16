@@ -2,7 +2,7 @@
 
 A local service: a queue of planned watches and a plan for the free time you have.
 
-This is part one. One program serves the pages and the JSON API.
+This is part one. One program serves the pages and the JSON API. The pages, errors, and letters are in English. A title, a synopsis, and episode names stay in the language the catalog sent.
 
 ```bash
 go test ./...

@@ -44,7 +44,7 @@ func (s *Service) Add(ctx context.Context, userID, titleID int64) (Item, error) 
 		return Item{}, apperr.AlreadyInQueue()
 	}
 	if errors.Is(err, storage.ErrPickSeason) {
-		return Item{}, apperr.Validation("У сериала несколько сезонов. Откройте его и выберите сезон.")
+		return Item{}, apperr.Validation("This series has several seasons. Open it and pick a season.")
 	}
 	if err != nil {
 		return Item{}, apperr.Internal(err)
@@ -97,7 +97,7 @@ func (s *Service) DailyMinutes(ctx context.Context, userID int64) (int, error) {
 
 func (s *Service) SetDailyMinutes(ctx context.Context, userID int64, minutes int) error {
 	if _, err := plan.NormalizeDaily(minutes); err != nil {
-		return apperr.Validation("Укажите от 0 до 1440 минут в день.")
+		return apperr.Validation("Enter 0 to 1440 minutes a day.")
 	}
 	err := s.db.SetDailyMinutes(ctx, userID, minutes)
 	if errors.Is(err, storage.ErrNotFound) {
@@ -154,14 +154,14 @@ func deltaOf(direction string) (int, error) {
 	case "down":
 		return 1, nil
 	default:
-		return 0, apperr.Validation("Укажите направление: up или down.")
+		return 0, apperr.Validation("Say which way: up or down.")
 	}
 }
 
 func itemFrom(row storage.QueueRow) Item {
 	name := row.Title.Name
 	if row.SeasonCount > 1 {
-		name = fmt.Sprintf("%s · сезон %d", row.Title.Name, row.SeasonNumber)
+		name = fmt.Sprintf("%s · season %d", row.Title.Name, row.SeasonNumber)
 	}
 	remaining := row.Remaining
 	if remaining == nil {

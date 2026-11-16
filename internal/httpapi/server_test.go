@@ -61,7 +61,7 @@ func TestAPI(t *testing.T) {
 	}
 
 	status, body = post(t, client, srv.URL+"/api/register", `{"username":"an","password":"password"}`)
-	if status != http.StatusBadRequest || !strings.Contains(body, "Имя:") {
+	if status != http.StatusBadRequest || !strings.Contains(body, "Name:") {
 		t.Fatalf("register: %d %s", status, body)
 	}
 	status, body = post(t, client, srv.URL+"/api/register", `{"username":"ann","password":"password","email":"ann@example.com"}`)
@@ -306,7 +306,7 @@ func TestManualCard(t *testing.T) {
 		t.Fatalf("search own: %d %s", status, body)
 	}
 	status, body = post(t, owner, srv.URL+"/api/titles", `{"name":"x","year":1999,"episodeCount":1,"averageMinutes":90}`)
-	if status != http.StatusBadRequest || !strings.Contains(body, "Название:") {
+	if status != http.StatusBadRequest || !strings.Contains(body, "Title:") {
 		t.Fatalf("short name: %d %s", status, body)
 	}
 	status, body = post(t, owner, srv.URL+"/api/titles", `{"name":"Сериал дома","year":2011,"episodeCount":4,"averageMinutes":25}`)
@@ -383,7 +383,7 @@ func TestPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.StatusCode != http.StatusOK || !strings.Contains(string(pageBody), "Очередь") || !strings.Contains(string(pageBody), "js/app.js") || page.Header.Get("Cache-Control") != "no-cache" {
+	if page.StatusCode != http.StatusOK || !strings.Contains(string(pageBody), "Queue") || !strings.Contains(string(pageBody), "js/app.js") || page.Header.Get("Cache-Control") != "no-cache" {
 		t.Fatalf("queue page: %d %s", page.StatusCode, page.Header.Get("Cache-Control"))
 	}
 	status, body := get(t, client, srv.URL+"/css/app.css")
@@ -432,7 +432,7 @@ func TestAccountEmail(t *testing.T) {
 		t.Fatalf("save %d %s", status, body)
 	}
 	status, body = patch(t, client, srv.URL+"/api/me", `{"email":"bob@example.com"}`)
-	if status != http.StatusBadRequest || !strings.Contains(body, "Такой адрес уже есть.") {
+	if status != http.StatusBadRequest || !strings.Contains(body, "That address is already in use.") {
 		t.Fatalf("taken %d %s", status, body)
 	}
 	status, body = patch(t, client, srv.URL+"/api/me", `{"email":""}`)

@@ -47,7 +47,7 @@ func TestApplyWatchedKeepsThursdayLetterAndSuggestions(t *testing.T) {
 		t.Fatal(err)
 	}
 	letter, err := svc.Letter(ctx, user.ID)
-	if err != nil || letter != "«Queued» кончится в четверг." {
+	if err != nil || letter != `"Queued" ends on Thursday.` {
 		t.Fatalf("%q %v", letter, err)
 	}
 	mark, offset, err := db.RhythmMark(ctx, user.ID)
@@ -55,7 +55,7 @@ func TestApplyWatchedKeepsThursdayLetterAndSuggestions(t *testing.T) {
 		t.Fatalf("%q %d %v", mark, offset, err)
 	}
 	picks, err := svc.Suggestions(ctx, user.ID)
-	if err != nil || len(picks) != 1 || picks[0].Name != "Neighbor" || picks[0].Reason != "Как «Queued»: Drama" {
+	if err != nil || len(picks) != 1 || picks[0].Name != "Neighbor" || picks[0].Reason != `Like "Queued": Drama` {
 		t.Fatalf("%v %+v", err, picks)
 	}
 	if err := svc.ApplyWatched(ctx, user.ID, thursday.AddDate(0, 0, 1)); err != nil {

@@ -179,7 +179,7 @@ func BuildCard(show Show, episodes []Episode) Card {
 func (s *Service) Search(ctx context.Context, query string) ([]Card, error) {
 	query = strings.TrimSpace(query)
 	if utf8.RuneCountInString(query) < 2 {
-		return nil, apperr.Validation("Введите не меньше двух символов.")
+		return nil, apperr.Validation("Enter at least two characters.")
 	}
 	catalogCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -553,16 +553,16 @@ func (s *Service) Get(ctx context.Context, id int64) (Card, error) {
 func (s *Service) AddManual(ctx context.Context, userID int64, name string, year, episodes, average int) (Card, error) {
 	name = strings.TrimSpace(name)
 	if n := utf8.RuneCountInString(name); n < 2 || n > 120 {
-		return Card{}, apperr.Validation("Название: от 2 до 120 символов.")
+		return Card{}, apperr.Validation("Title: 2 to 120 characters.")
 	}
 	if year < 1888 || year > 2100 {
-		return Card{}, apperr.Validation("Год: от 1888 до 2100.")
+		return Card{}, apperr.Validation("Year: from 1888 to 2100.")
 	}
 	if episodes < 1 || episodes > 500 {
-		return Card{}, apperr.Validation("Число серий: от 1 до 500.")
+		return Card{}, apperr.Validation("Episodes: from 1 to 500.")
 	}
 	if average < 1 || average > 1440 {
-		return Card{}, apperr.Validation("Длительность серии: от 1 до 1440 минут.")
+		return Card{}, apperr.Validation("Episode length: from 1 to 1440 minutes.")
 	}
 	saved, err := s.db.CreateManual(ctx, userID, storage.Title{
 		Name: name, Year: year, EpisodeCount: episodes, AverageMinutes: average, Source: sourceManual,

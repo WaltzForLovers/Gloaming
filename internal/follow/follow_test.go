@@ -34,10 +34,10 @@ func TestPicksRankSharedGenresAndSkipNamesakes(t *testing.T) {
 			t.Fatalf("%v", ids)
 		}
 	}
-	if picks[0].Reason != "Как «Breaking Bad»: Drama, Crime, Thriller" {
+	if picks[0].Reason != `Like "Breaking Bad": Drama, Crime, Thriller` {
 		t.Fatalf("%q", picks[0].Reason)
 	}
-	if picks[2].Reason != "Как «Supernatural»: Drama, Supernatural" {
+	if picks[2].Reason != `Like "Supernatural": Drama, Supernatural` {
 		t.Fatalf("%q", picks[2].Reason)
 	}
 }
@@ -46,7 +46,7 @@ func TestPicksAcceptOneGenreWhenTheQueueHasOne(t *testing.T) {
 	queued := []storage.Title{{ID: 1, Name: "Queued", Genres: []string{"Drama"}}}
 	pool := []storage.Title{{ID: 2, Name: "Neighbor", Genres: []string{"Drama", "Comedy"}}}
 	picks := Picks(queued, pool, 6)
-	if len(picks) != 1 || picks[0].TitleID != 2 || picks[0].Reason != "Как «Queued»: Drama" {
+	if len(picks) != 1 || picks[0].TitleID != 2 || picks[0].Reason != `Like "Queued": Drama` {
 		t.Fatalf("%+v", picks)
 	}
 	if got := Picks(nil, pool, 6); len(got) != 0 {
