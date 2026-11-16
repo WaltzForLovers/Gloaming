@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/WaltzForLovers/Gloaming/internal/apperr"
@@ -19,6 +20,7 @@ const (
 	searchLimit    = 10
 	sourceTVMaze   = "tvmaze"
 	sourceWikidata = "wikidata"
+	sourceAniList  = "anilist"
 	sourceManual   = "manual"
 )
 
@@ -41,9 +43,11 @@ type Show struct {
 	ID             int
 	Source         string
 	Name           string
+	Alias          string
 	Year           int
 	AverageRuntime int
 	Runtime        int
+	Episodes       int
 	Poster         string
 	WikiTitle      string
 	Genres         []string
@@ -53,6 +57,10 @@ type Show struct {
 
 type FilmClient interface {
 	SearchFilms(ctx context.Context, query string) ([]Show, error)
+}
+
+type AnimeClient interface {
+	SearchAnime(ctx context.Context, query string) ([]Show, error)
 }
 
 type Episode struct {
@@ -87,6 +95,7 @@ type Service struct {
 	db            *storage.DB
 	client        Client
 	films         FilmClient
+	anime         AnimeClient
 	timeout       time.Duration
 	grace         time.Duration
 	filmWait      time.Duration
@@ -129,6 +138,11 @@ func (s *Service) UseMail(sender mail.Sender) *Service {
 
 func (s *Service) WithFilms(films FilmClient) *Service {
 	s.films = films
+	return s
+}
+
+func (s *Service) WithAnime(anime AnimeClient) *Service {
+	s.anime = anime
 	return s
 }
 
@@ -188,6 +202,15 @@ func (s *Service) Search(ctx context.Context, query string) ([]Card, error) {
 		shows, err := s.client.SearchShows(catalogCtx, query)
 		showCh <- found{shows, err}
 	}()
+	animeCh := make(chan found, 1)
+	animeCtx, animeCancel := context.WithTimeout(ctx, s.timeout)
+	defer animeCancel()
+	if s.anime != nil {
+		go func() {
+			shows, err := s.anime.SearchAnime(animeCtx, query)
+			animeCh <- found{shows, err}
+		}()
+	}
 
 	var showsFound, filmsFound found
 	var showGot, filmGot bool
@@ -238,8 +261,20 @@ answered:
 			filmsFound.err = context.DeadlineExceeded
 		}
 	}
+	var anime []Show
+	if s.anime != nil {
+		select {
+		case got := <-animeCh:
+			if got.err == nil {
+				anime = got.shows
+			}
+		case <-time.After(s.grace):
+		case <-ctx.Done():
+		}
+		animeCancel()
+	}
 	shows, showErr := showsFound.shows, showsFound.err
-	if showErr != nil && (filmsFound.err != nil || len(filmsFound.shows) == 0) {
+	if showErr != nil && (filmsFound.err != nil || len(filmsFound.shows) == 0) && len(anime) == 0 {
 		return nil, apperr.CatalogUnavailable().WithCause(showErr)
 	}
 	var episodes [][]Episode
@@ -256,12 +291,12 @@ answered:
 		epCancel()
 	}
 	if filmsFound.err != nil {
-		if len(shows) == 0 {
+		if len(shows) == 0 && len(anime) == 0 {
 			return nil, apperr.CatalogUnavailable().WithCause(filmsFound.err)
 		}
 		filmsFound.shows = nil
 	}
-	merged := mergeResults(shows, episodes, epErrs, filmsFound.shows)
+	merged := mergeResults(shows, episodes, epErrs, filmsFound.shows, anime)
 	if len(merged) == 0 {
 		return nil, apperr.TitleNotFound()
 	}
@@ -269,8 +304,11 @@ answered:
 	cards := make([]Card, 0, len(merged))
 	for _, item := range merged {
 		episodes := item.episodes
-		if item.show.Source == sourceWikidata {
+		switch item.show.Source {
+		case sourceWikidata:
 			episodes = []Episode{{Runtime: item.show.Runtime}}
+		case sourceAniList:
+			episodes = animeEpisodes(item.show)
 		}
 		card := BuildCard(item.show, episodes)
 		source := item.show.Source
@@ -340,7 +378,8 @@ func (s *Service) fetchEpisodes(ctx context.Context, shows []Show) ([][]Episode,
 	return episodes, errs
 }
 
-func mergeResults(shows []Show, episodes [][]Episode, errs []error, films []Show) []mergedShow {
+func mergeResults(shows []Show, episodes [][]Episode, errs []error, films, anime []Show) []mergedShow {
+	films = interleave(freshAnime(anime, shows), films)
 	if len(shows) > 0 && len(films) > 5 {
 		films = films[:5]
 	}
@@ -364,10 +403,57 @@ func mergeResults(shows []Show, episodes [][]Episode, errs []error, films []Show
 		out = append(out, mergedShow{show: show, episodes: eps, slow: slow})
 	}
 	for _, film := range films {
-		film.Source = sourceWikidata
+		if film.Source == "" {
+			film.Source = sourceWikidata
+		}
 		out = append(out, mergedShow{show: film})
 	}
 	return out
+}
+
+func freshAnime(anime, shows []Show) []Show {
+	out := make([]Show, 0, len(anime))
+	for _, item := range anime {
+		taken := false
+		for _, show := range shows {
+			sameYear := item.Year == 0 || show.Year == 0 || item.Year == show.Year
+			if sameYear && (sameName(item.Name, show.Name) || sameName(item.Alias, show.Name)) {
+				taken = true
+				break
+			}
+		}
+		if !taken {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func interleave(a, b []Show) []Show {
+	out := make([]Show, 0, len(a)+len(b))
+	for i := 0; i < len(a) || i < len(b); i++ {
+		if i < len(a) {
+			out = append(out, a[i])
+		}
+		if i < len(b) {
+			out = append(out, b[i])
+		}
+	}
+	return out
+}
+
+func sameName(a, b string) bool {
+	key := func(s string) string {
+		var out strings.Builder
+		for _, r := range strings.ToLower(s) {
+			if unicode.IsLetter(r) || unicode.IsDigit(r) {
+				out.WriteRune(r)
+			}
+		}
+		return out.String()
+	}
+	ka := key(a)
+	return ka != "" && ka == key(b)
 }
 
 func seedsOf(source string, show Show, episodes []Episode) []storage.EpisodeSeed {
@@ -539,7 +625,10 @@ func cardFrom(title storage.Title) Card {
 var markup = regexp.MustCompile(`(?s)<[^>]*>`)
 
 func plainText(raw string) string {
-	raw = strings.NewReplacer("<br>", " ", "<br/>", " ", "<br />", " ", "</p>", " ", "</div>", " ").Replace(raw)
+	raw = strings.NewReplacer(
+		"<br>", " ", "<br/>", " ", "<br />", " ", "</p>", " ", "</div>", " ",
+		"<i>", "", "</i>", "", "<b>", "", "</b>", "", "<em>", "", "</em>", "", "<strong>", "", "</strong>", "",
+	).Replace(raw)
 	raw = markup.ReplaceAllString(raw, " ")
 	raw = html.UnescapeString(raw)
 	raw = strings.Join(strings.Fields(raw), " ")
