@@ -61,6 +61,7 @@ func New(authSvc *auth.Service, catalogSvc *catalog.Service, queueSvc *queue.Ser
 	mux.HandleFunc("DELETE /api/queue/{id}", s.deleteQueue)
 	mux.HandleFunc("POST /api/plan", s.plan)
 	mux.HandleFunc("PATCH /api/rhythm", s.setRhythm)
+	mux.HandleFunc("POST /api/episodes/watched", s.setWatchedMany)
 	mux.HandleFunc("POST /api/episodes/{id}", s.setWatched)
 	if files == nil {
 		return mux
@@ -327,6 +328,27 @@ func (s *server) setWatched(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.catalog.SetWatched(r.Context(), user.ID, id, body.Watched); err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) setWatchedMany(w http.ResponseWriter, r *http.Request) {
+	user, err := s.currentUser(r)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	var body struct {
+		IDs     []int64 `json:"ids"`
+		Watched bool    `json:"watched"`
+	}
+	if err := readJSON(w, r, &body); err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	if err := s.catalog.SetWatchedMany(r.Context(), user.ID, body.IDs, body.Watched); err != nil {
 		s.writeErr(w, err)
 		return
 	}

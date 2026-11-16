@@ -119,28 +119,33 @@ function finishOffset(remaining, daily) {
   return Math.ceil(remaining / daily) - 1;
 }
 
-function finishWhen(offset) {
-  if (offset === 0) return "today";
-  if (offset === 1) return "tomorrow";
+function finishDay(offset) {
   const date = new Date();
   date.setHours(12, 0, 0, 0);
   date.setDate(date.getDate() + offset);
-  const options = { day: "numeric", month: "long" };
-  if (date.getFullYear() !== new Date().getFullYear()) options.year = "numeric";
-  return "on " + date.toLocaleDateString("en-US", options);
+  let small = date.toLocaleDateString("en-US", { weekday: "long" });
+  if (offset === 0) return { big: "Today", small };
+  if (offset === 1) return { big: "Tomorrow", small };
+  if (date.getFullYear() !== new Date().getFullYear()) small += ", " + date.getFullYear();
+  return { big: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }), small };
 }
 
-function rhythmText(rows, daily) {
+function rhythmParts(rows, daily) {
   const current = rows.find((item) => (item.remainingMinutes || 0) > 0);
   const queueMinutes = rows.reduce((sum, item) => sum + Math.max(0, item.remainingMinutes || 0), 0);
   const unknown = rows.some((item) => (item.remainingMinutes || 0) <= 0 && (item.episodes || 0) > 0);
   if (!current) {
-    if (rows.length && rows.every((item) => (item.episodes || 0) === 0)) return "Everything in the queue is already watched.";
-    return "Nothing in the queue has a runtime to count yet.";
+    if (rows.length && rows.every((item) => (item.episodes || 0) === 0)) return { text: "Everything in the queue is already watched." };
+    return { text: "Nothing in the queue has a runtime to count yet." };
   }
-  if (daily <= 0) return "How many minutes a day do you watch? I’ll show when the current season ends and when the whole queue ends.";
-  const tail = unknown ? " Titles without a runtime are left out." : "";
-  return "At " + daily + " min a day, “" + current.name + "” ends " + finishWhen(finishOffset(current.remainingMinutes, daily)) + ". The whole queue ends " + finishWhen(finishOffset(queueMinutes, daily)) + "." + tail;
+  if (daily <= 0) return { text: "How many minutes a day do you watch? I’ll show when the current season ends and when the whole queue ends." };
+  return {
+    tiles: [
+      Object.assign({ label: "Season ends", name: current.name }, finishDay(finishOffset(current.remainingMinutes, daily))),
+      Object.assign({ label: "Queue ends", name: "at " + daily + " min a day" }, finishDay(finishOffset(queueMinutes, daily)))
+    ],
+    text: unknown ? "Titles without a runtime are left out." : ""
+  };
 }
 
 function readCount(value) {
@@ -677,6 +682,8 @@ function bindQueue() {
   const form = document.querySelector(".time");
   const rhythmForm = document.querySelector(".rhythm");
   const rhythmLine = document.querySelector(".rhythm-line");
+  const heroDates = document.querySelector(".hero-dates");
+  const heroTotal = document.querySelector(".hero-total");
   const letterLine = document.querySelector(".letter");
   const picks = document.querySelector(".picks");
   const pickList = document.querySelector(".pick-list");
@@ -699,11 +706,14 @@ function bindQueue() {
   let letterText = "";
   let suggestions = [];
 
+  function queueMinutes(rows) {
+    return rows.reduce((sum, item) => sum + (item.remainingMinutes || (known(item) ? item.episodes * item.average : 0)), 0);
+  }
+
   function summaryText(rows) {
-    const minutes = rows.reduce((sum, item) => sum + (item.remainingMinutes || (known(item) ? item.episodes * item.average : 0)), 0);
+    const minutes = queueMinutes(rows);
     const unknown = rows.filter((item) => !known(item)).length;
     let text = rows.length + " " + plural(rows.length, "title", "titles");
-    if (minutes > 0) text += " · " + formatMinutes(minutes);
     if (unknown > 0) text += " · " + unknown + " with no runtime";
     const free = readFree(form);
     if (free > 0 && minutes > 0) {
@@ -719,10 +729,45 @@ function bindQueue() {
     return text;
   }
 
+  function showRhythm(parts) {
+    if (typeof parts === "string") parts = { text: parts };
+    const tiles = (parts && parts.tiles) || [];
+    rhythmLine.textContent = (parts && parts.text) || "";
+    heroDates.replaceChildren();
+    tiles.forEach((tile) => {
+      const box = document.createElement("div");
+      box.className = "date-tile";
+      [["date-label", tile.label], ["date-big", tile.big], ["date-small", tile.small], ["date-name", tile.name]].forEach(([cls, text]) => {
+        const line = document.createElement("span");
+        line.className = cls;
+        line.textContent = text;
+        box.append(line);
+      });
+      heroDates.append(box);
+    });
+    heroDates.hidden = tiles.length === 0;
+  }
+
+  function showTotal() {
+    const minutes = queueMinutes(items);
+    heroTotal.textContent = "";
+    if (minutes <= 0) {
+      heroTotal.textContent = "No runtime yet";
+    } else {
+      formatMinutes(minutes).split(" ").forEach((part) => {
+        const span = document.createElement("span");
+        span.className = /^\d/.test(part) ? "total-num" : "total-unit";
+        span.textContent = part;
+        heroTotal.append(span);
+      });
+    }
+    summary.textContent = items.length ? summaryText(items) : "";
+  }
+
   function render(skipFlipId) {
     page.classList.toggle("is-empty", items.length === 0);
-    summary.textContent = items.length ? summaryText(items) : "";
-    rhythmLine.textContent = items.length ? rhythmText(items, dailyMinutes) : "";
+    showTotal();
+    showRhythm(items.length ? rhythmParts(items, dailyMinutes) : "");
     if (letterLine) {
       letterLine.hidden = letterText === "";
       letterLine.textContent = letterText ? "Letter: " + letterText : "";
@@ -761,16 +806,23 @@ function bindQueue() {
       const left = item.kind === "series" && item.totalEpisodes ? " · " + item.episodes + " of " + item.totalEpisodes + " left" : "";
       row.innerHTML = `
         <button class="grip" type="button" aria-label="Drag"><span></span></button>
-        <div>
+        <a class="q-open">
           <div class="hit-name"></div>
           <div class="hit-meta"></div>
-        </div>
+        </a>
         <div class="q-actions">
           <button class="ghost" type="button" data-dir="up">higher</button>
           <button class="ghost" type="button" data-dir="down">lower</button>
           <button class="ghost danger" type="button" data-dir="remove">remove</button>
         </div>`;
-      row.querySelector(".grip").after(posterNode(item));
+      const href = "title.html?id=" + item.titleId + (item.seasonNumber ? "&season=" + item.seasonNumber : "");
+      const posterLink = document.createElement("a");
+      posterLink.className = "q-poster";
+      posterLink.href = href;
+      posterLink.tabIndex = -1;
+      posterLink.append(posterNode(item));
+      row.querySelector(".grip").after(posterLink);
+      row.querySelector(".q-open").href = href;
       row.querySelector(".hit-name").textContent = item.name;
       row.querySelector(".hit-meta").textContent = (index + 1) + " · " + kind + " · " + length + left;
       row.querySelector('[data-dir="up"]').disabled = index === 0;
@@ -1027,11 +1079,11 @@ function bindQueue() {
     clearTimeout(paceTimer);
     const value = readDaily(rhythmForm);
     if (value == null) {
-      rhythmLine.textContent = "Enter 0 to 1440 minutes a day.";
+      showRhythm("Enter 0 to 1440 minutes a day.");
       return;
     }
     dailyMinutes = value;
-    rhythmLine.textContent = items.length ? rhythmText(items, dailyMinutes) : "";
+    showRhythm(items.length ? rhythmParts(items, dailyMinutes) : "");
     paceTimer = setTimeout(() => savePace(value), 400);
   });
 
@@ -1040,11 +1092,11 @@ function bindQueue() {
     clearTimeout(paceTimer);
     const value = readDaily(rhythmForm);
     if (value == null) {
-      rhythmLine.textContent = "Enter 0 to 1440 minutes a day.";
+      showRhythm("Enter 0 to 1440 minutes a day.");
       return;
     }
     dailyMinutes = value;
-    rhythmLine.textContent = items.length ? rhythmText(items, dailyMinutes) : "";
+    showRhythm(items.length ? rhythmParts(items, dailyMinutes) : "");
     savePace(value);
   });
 
@@ -1390,6 +1442,7 @@ function bindTitle() {
     seasonList.forEach((season) => {
       const block = document.createElement("section");
       block.className = "season";
+      block.id = "season-" + season.number;
       const bar = document.createElement("div");
       bar.className = "season-head";
       const heading = document.createElement("h2");
@@ -1427,9 +1480,22 @@ function bindTitle() {
           }
         });
       }
-      bar.append(label, action);
+      const episodes = season.episodes || [];
+      const tools = document.createElement("div");
+      tools.className = "season-tools";
+      if (total > 0) {
+        const all = watched === total;
+        const sweep = document.createElement("button");
+        sweep.className = "text-btn";
+        sweep.type = "button";
+        sweep.textContent = all ? "Clear season" : "Season watched";
+        sweep.addEventListener("click", () => markMany(sweep, episodes.map((episode) => episode.id), !all));
+        tools.append(sweep);
+      }
+      tools.append(action);
+      bar.append(label, tools);
       block.append(bar);
-      (season.episodes || []).forEach((episode) => {
+      episodes.forEach((episode, index) => {
         const row = document.createElement("div");
         row.className = "episode";
         const name = document.createElement("span");
@@ -1448,14 +1514,42 @@ function bindTitle() {
             if (!gone(err)) showError(err.message);
           }
         });
-        row.append(name, mark);
+        const before = episodes.slice(0, index + 1);
+        if (index > 0 && before.some((item) => !item.watched)) {
+          const upTo = document.createElement("button");
+          upTo.className = "text-btn up-to";
+          upTo.type = "button";
+          upTo.textContent = "Watched up to here";
+          upTo.addEventListener("click", () => markMany(upTo, before.map((item) => item.id), true));
+          row.append(name, upTo, mark);
+        } else {
+          row.append(name, mark);
+        }
         block.append(row);
       });
       seasons.append(block);
     });
   }
 
-  load().catch((err) => {
+  async function markMany(button, ids, watched) {
+    clearError();
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = "Saving…";
+    try {
+      await api("/api/episodes/watched", { method: "POST", body: { ids, watched } });
+      await load();
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = label;
+      if (!gone(err)) showError(err.message);
+    }
+  }
+
+  load().then(() => {
+    const target = params.get("season") && document.getElementById("season-" + params.get("season"));
+    if (target) target.scrollIntoView({ block: "start" });
+  }).catch((err) => {
     if (!gone(err)) showError(err.message);
   });
 }
