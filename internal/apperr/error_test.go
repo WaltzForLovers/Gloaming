@@ -9,7 +9,7 @@ import (
 
 func TestCatalogMessages(t *testing.T) {
 	samples := []*Error{
-		Validation("Имя: от 3 до 32 символов, только буквы, цифры и подчёркивание."),
+		Validation("Name: 3 to 32 characters, letters, digits, and underscore only."),
 		UserExists(),
 		InvalidCredentials(),
 		Unauthorized(),
@@ -55,34 +55,34 @@ func TestCatalogMessages(t *testing.T) {
 }
 
 func TestFixedPhrases(t *testing.T) {
-	if UserExists().Message != "Такое имя уже есть. Выберите другое." {
+	if UserExists().Message != "That name is taken. Choose another." {
 		t.Fatal(UserExists().Message)
 	}
-	if InvalidCredentials().Message != "Неверное имя или пароль." {
+	if InvalidCredentials().Message != "Wrong name or password." {
 		t.Fatal(InvalidCredentials().Message)
 	}
-	if Unauthorized().Message != "Сначала войдите." {
+	if Unauthorized().Message != "Sign in first." {
 		t.Fatal(Unauthorized().Message)
 	}
-	if TitleNotFound().Message != "Такого названия не нашли. Проверьте написание." {
+	if TitleNotFound().Message != "No title matched that. Check the spelling." {
 		t.Fatal(TitleNotFound().Message)
 	}
-	if CatalogUnavailable().Message != "Каталог сейчас недоступен. Уже открытые карточки на месте." {
+	if CatalogUnavailable().Message != "The catalog is unavailable right now. Cards you already opened are still here." {
 		t.Fatal(CatalogUnavailable().Message)
 	}
-	if AlreadyInQueue().Message != "Этот тайтл уже в очереди." {
+	if AlreadyInQueue().Message != "That title is already in the queue." {
 		t.Fatal(AlreadyInQueue().Message)
 	}
-	if InvalidFreeTime().Message != "Укажите свободное время в пределах семи суток." {
+	if InvalidFreeTime().Message != "Enter free time within seven days." {
 		t.Fatal(InvalidFreeTime().Message)
 	}
-	if NotFound().Message != "Пункт очереди не найден." {
+	if NotFound().Message != "Queue item not found." {
 		t.Fatal(NotFound().Message)
 	}
-	if PortBusy().Message != "Порт 8080 занят. Закройте программу, которая его держит." {
+	if PortBusy().Message != "Port 8080 is in use. Close the program that is holding it." {
 		t.Fatal(PortBusy().Message)
 	}
-	if Internal(errors.New("x")).Message != "Что-то сломалось. Попробуйте ещё раз." {
+	if Internal(errors.New("x")).Message != "Something broke. Try again." {
 		t.Fatal(Internal(nil).Message)
 	}
 }

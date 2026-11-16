@@ -221,7 +221,7 @@ func (s *server) forgotPassword(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"message": "Если такой адрес есть, письмо уже отправлено."})
+	writeJSON(w, http.StatusOK, map[string]any{"message": "If that address exists, the letter has been sent."})
 }
 
 func (s *server) resetPassword(w http.ResponseWriter, r *http.Request) {
@@ -548,7 +548,7 @@ func (s *server) currentUser(r *http.Request) (auth.User, error) {
 func pathID(r *http.Request) (int64, error) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
-		return 0, apperr.Validation("Не удалось прочитать запрос.")
+		return 0, apperr.Validation("Could not read the request.")
 	}
 	return id, nil
 }
@@ -556,7 +556,7 @@ func pathID(r *http.Request) (int64, error) {
 func readJSON(w http.ResponseWriter, r *http.Request, dest any) error {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err := dec.Decode(dest); err != nil {
-		return apperr.Validation("Не удалось прочитать запрос.")
+		return apperr.Validation("Could not read the request.")
 	}
 	return nil
 }

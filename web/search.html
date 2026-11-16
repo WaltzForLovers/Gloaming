@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Gloaming — Поиск</title>
+  <title>Gloaming — Search</title>
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body data-page="search">
@@ -12,34 +12,34 @@
     <div class="brand-row">
       <a class="brand" href="queue.html">Gloaming</a>
       <nav class="nav">
-        <a href="queue.html" data-page="queue">Очередь</a>
-        <a href="search.html" data-page="search">Поиск</a>
+        <a href="queue.html" data-page="queue">Queue</a>
+        <a href="search.html" data-page="search">Search</a>
       </nav>
     </div>
     <div class="session">
       <span class="who"></span>
-      <button class="text-btn" id="logout" type="button">Выйти</button>
+      <button class="text-btn" id="logout" type="button">Sign out</button>
     </div>
   </header>
   <main class="page">
-    <h1>Поиск</h1>
+    <h1>Search</h1>
     <form class="search-form">
-      <input name="q" placeholder="Название" autocomplete="off">
-      <button class="primary" type="submit">Найти</button>
+      <input name="q" placeholder="Title" autocomplete="off">
+      <button class="primary" type="submit">Search</button>
     </form>
     <div class="alert"><div><p></p></div></div>
-    <p class="hint">Введите название</p>
+    <p class="hint">Enter a title</p>
     <div class="filters" hidden></div>
     <div class="hits"></div>
-    <button class="text-btn manual-open" type="button" hidden>Нет нужного — своя карточка</button>
+    <button class="text-btn manual-open" type="button" hidden>Not the one — add your own</button>
     <form class="manual" hidden>
       <p class="manual-lead"></p>
       <div class="manual-fields">
-        <label>Год<input name="year" inputmode="numeric" autocomplete="off"></label>
-        <label>Серий<input name="episodes" inputmode="numeric" autocomplete="off"></label>
-        <label>Минут<input name="average" inputmode="numeric" autocomplete="off"></label>
+        <label>Year<input name="year" inputmode="numeric" autocomplete="off"></label>
+        <label>Episodes<input name="episodes" inputmode="numeric" autocomplete="off"></label>
+        <label>Minutes<input name="average" inputmode="numeric" autocomplete="off"></label>
       </div>
-      <button class="primary" type="submit">Создать карточку</button>
+      <button class="primary" type="submit">Create card</button>
     </form>
   </main>
   <script src="js/app.js"></script>

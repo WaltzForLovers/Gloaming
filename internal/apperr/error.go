@@ -49,47 +49,47 @@ func Validation(message string) *Error {
 }
 
 func UserExists() *Error {
-	return &Error{Code: CodeUserExists, Message: "Такое имя уже есть. Выберите другое."}
+	return &Error{Code: CodeUserExists, Message: "That name is taken. Choose another."}
 }
 
 func InvalidCredentials() *Error {
-	return &Error{Code: CodeInvalidCredentials, Message: "Неверное имя или пароль."}
+	return &Error{Code: CodeInvalidCredentials, Message: "Wrong name or password."}
 }
 
 func Unauthorized() *Error {
-	return &Error{Code: CodeUnauthorized, Message: "Сначала войдите."}
+	return &Error{Code: CodeUnauthorized, Message: "Sign in first."}
 }
 
 func TitleNotFound() *Error {
-	return &Error{Code: CodeTitleNotFound, Message: "Такого названия не нашли. Проверьте написание."}
+	return &Error{Code: CodeTitleNotFound, Message: "No title matched that. Check the spelling."}
 }
 
 func CatalogUnavailable() *Error {
-	return &Error{Code: CodeCatalogUnavailable, Message: "Каталог сейчас недоступен. Уже открытые карточки на месте."}
+	return &Error{Code: CodeCatalogUnavailable, Message: "The catalog is unavailable right now. Cards you already opened are still here."}
 }
 
 func AlreadyInQueue() *Error {
-	return &Error{Code: CodeAlreadyInQueue, Message: "Этот тайтл уже в очереди."}
+	return &Error{Code: CodeAlreadyInQueue, Message: "That title is already in the queue."}
 }
 
 func InvalidFreeTime() *Error {
-	return &Error{Code: CodeInvalidFreeTime, Message: "Укажите свободное время в пределах семи суток.", cause: plan.ErrInvalidFreeTime}
+	return &Error{Code: CodeInvalidFreeTime, Message: "Enter free time within seven days.", cause: plan.ErrInvalidFreeTime}
 }
 
 func TooMany() *Error {
-	return &Error{Code: CodeTooMany, Message: "Слишком много попыток. Подождите минуту."}
+	return &Error{Code: CodeTooMany, Message: "Too many attempts. Wait a minute."}
 }
 
 func NotFound() *Error {
-	return &Error{Code: CodeNotFound, Message: "Пункт очереди не найден."}
+	return &Error{Code: CodeNotFound, Message: "Queue item not found."}
 }
 
 func PortBusy() *Error {
-	return &Error{Code: CodePortBusy, Message: "Порт 8080 занят. Закройте программу, которая его держит."}
+	return &Error{Code: CodePortBusy, Message: "Port 8080 is in use. Close the program that is holding it."}
 }
 
 func Internal(cause error) *Error {
-	return &Error{Code: CodeInternal, Message: "Что-то сломалось. Попробуйте ещё раз.", cause: cause}
+	return &Error{Code: CodeInternal, Message: "Something broke. Try again.", cause: cause}
 }
 
 func From(err error) *Error {

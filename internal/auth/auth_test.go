@@ -136,7 +136,7 @@ func TestSetEmailOnExistingAccount(t *testing.T) {
 	if err != nil || got != "ann2@example.com" {
 		t.Fatalf("set: %q %v", got, err)
 	}
-	if sent.to != "ann2@example.com" || !strings.Contains(sent.body, "указан этот адрес") {
+	if sent.to != "ann2@example.com" || !strings.Contains(sent.body, "This address is now on account") {
 		t.Fatalf("notice %q %q", sent.to, sent.body)
 	}
 	if _, err := svc.SetEmail(ctx, ann.ID, ann.Username, "bob@example.com"); apperr.From(err).Code != apperr.CodeValidation {
@@ -163,7 +163,7 @@ func TestResetPasswordByMail(t *testing.T) {
 	if _, err := svc.Register(ctx, "ann", "password", "ann@example.com"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(sent.body, "создан") {
+	if !strings.Contains(sent.body, "is ready") {
 		t.Fatalf("welcome %q", sent.body)
 	}
 	if err := svc.Forgot(ctx, "missing@example.com"); err != nil {

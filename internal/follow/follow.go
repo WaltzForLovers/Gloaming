@@ -15,7 +15,7 @@ import (
 const LetterThursday = "season_thursday"
 
 func LetterBody(title string) string {
-	return "«" + title + "» кончится в четверг."
+	return `"` + title + `" ends on Thursday.`
 }
 
 // Apply stores the pace, a Thursday letter, and genre picks for one user.
@@ -147,7 +147,7 @@ func reason(item scored) string {
 	if item.like == "" {
 		return genres
 	}
-	return "Как «" + item.like + "»: " + genres
+	return `Like "` + item.like + `": ` + genres
 }
 
 func closest(title storage.Title, queued []storage.Title) string {

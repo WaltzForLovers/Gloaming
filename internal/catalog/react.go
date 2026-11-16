@@ -49,7 +49,7 @@ func (s *Service) sendLetter(ctx context.Context, userID int64) {
 	if err != nil || !ok {
 		return
 	}
-	if err := s.mail.Send(ctx, email, "Сезон кончается в четверг", body+"\n"); err != nil {
+	if err := s.mail.Send(ctx, email, "A season ends on Thursday", body+"\n"); err != nil {
 		return
 	}
 	_ = s.db.MarkLetterSent(ctx, userID, follow.LetterThursday)

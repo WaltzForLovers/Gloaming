@@ -28,12 +28,12 @@ async function api(path, options) {
       credentials: "same-origin",
     });
   } catch {
-    throw new Error("Не получилось связаться с программой.");
+    throw new Error("Could not reach the program.");
   }
   if (response.status === 204) return null;
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error((data.error && data.error.message) || "Что-то пошло не так. Попробуйте ещё раз.");
+    const error = new Error((data.error && data.error.message) || "Something went wrong. Try again.");
     error.status = response.status;
     error.code = data.error && data.error.code;
     throw error;
@@ -100,22 +100,18 @@ function known(item) {
 }
 
 function kindOf(item) {
-  return item.kind === "film" ? "фильм" : "сериал";
+  return item.kind === "film" ? "film" : "series";
 }
 
-function plural(n, one, few, many) {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return one;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
-  return many;
+function plural(n, one, other) {
+  return n === 1 ? one : other;
 }
 
 function formatMinutes(total) {
-  if (total < 60) return total + " мин";
+  if (total < 60) return total + " min";
   const hours = Math.floor(total / 60);
   const minutes = total % 60;
-  return minutes ? hours + " ч " + minutes + " мин" : hours + " ч";
+  return minutes ? hours + " hr " + minutes + " min" : hours + " hr";
 }
 
 function finishOffset(remaining, daily) {
@@ -124,14 +120,14 @@ function finishOffset(remaining, daily) {
 }
 
 function finishWhen(offset) {
-  if (offset === 0) return "сегодня";
-  if (offset === 1) return "завтра";
+  if (offset === 0) return "today";
+  if (offset === 1) return "tomorrow";
   const date = new Date();
   date.setHours(12, 0, 0, 0);
   date.setDate(date.getDate() + offset);
   const options = { day: "numeric", month: "long" };
   if (date.getFullYear() !== new Date().getFullYear()) options.year = "numeric";
-  return date.toLocaleDateString("ru-RU", options);
+  return "on " + date.toLocaleDateString("en-US", options);
 }
 
 function rhythmText(rows, daily) {
@@ -139,12 +135,12 @@ function rhythmText(rows, daily) {
   const queueMinutes = rows.reduce((sum, item) => sum + Math.max(0, item.remainingMinutes || 0), 0);
   const unknown = rows.some((item) => (item.remainingMinutes || 0) <= 0 && (item.episodes || 0) > 0);
   if (!current) {
-    if (rows.length && rows.every((item) => (item.episodes || 0) === 0)) return "В очереди всё уже отмечено.";
-    return "В очереди пока не из чего считать ритм.";
+    if (rows.length && rows.every((item) => (item.episodes || 0) === 0)) return "Everything in the queue is already watched.";
+    return "Nothing in the queue has a runtime to count yet.";
   }
-  if (daily <= 0) return "Сколько минут в день смотрите? Покажу, когда кончится текущий сезон и вся очередь.";
-  const tail = unknown ? " Без длительности в расчёт не берём." : "";
-  return "По " + daily + " мин в день «" + current.name + "» кончится " + finishWhen(finishOffset(current.remainingMinutes, daily)) + ". Вся очередь — " + finishWhen(finishOffset(queueMinutes, daily)) + "." + tail;
+  if (daily <= 0) return "How many minutes a day do you watch? I’ll show when the current season ends and when the whole queue ends.";
+  const tail = unknown ? " Titles without a runtime are left out." : "";
+  return "At " + daily + " min a day, “" + current.name + "” ends " + finishWhen(finishOffset(current.remainingMinutes, daily)) + ". The whole queue ends " + finishWhen(finishOffset(queueMinutes, daily)) + "." + tail;
 }
 
 function readCount(value) {
@@ -164,15 +160,15 @@ function readDaily(form) {
 }
 
 function seriesWord(n) {
-  return plural(n, "серия", "серии", "серий");
+  return plural(n, "episode", "episodes");
 }
 
 function runtimeLine(item) {
   if (item.kind === "film") {
-    if (!item.average) return "длительность неизвестна";
+    if (!item.average) return "runtime unknown";
     return formatMinutes(item.average);
   }
-  return item.episodes + " " + seriesWord(item.episodes) + ", средняя " + item.average + " мин";
+  return item.episodes + " " + seriesWord(item.episodes) + ", " + item.average + " min on average";
 }
 
 function mountDetail(root, item, queued) {
@@ -183,10 +179,10 @@ function mountDetail(root, item, queued) {
         <p class="facts"></p>
         <p class="blurb"></p>
         ${item.kind === "series"
-          ? '<div class="detail-actions"><a class="primary" href="title.html?id=' + item.id + '">Сезоны</a>'
-            + (item.assembling ? "" : '<button class="ghost" type="button" data-whole="' + item.id + '">Весь сериал</button>')
+          ? '<div class="detail-actions"><a class="primary" href="title.html?id=' + item.id + '">Seasons</a>'
+            + (item.assembling ? "" : '<button class="ghost" type="button" data-whole="' + item.id + '">Whole series</button>')
             + "</div>"
-          : (queued ? '<span class="queued">В очереди</span>' : '<button class="primary" type="button" data-add="">В очередь</button>')}
+          : (queued ? '<span class="queued">In the queue</span>' : '<button class="primary" type="button" data-add="">Add to queue</button>')}
       </div>
     </div>`;
   root.querySelector(".detail-poster").append(posterNode(item, "poster-lg"));
@@ -199,10 +195,10 @@ function mountDetail(root, item, queued) {
 }
 
 function outcomeText(line) {
-  if (line.outcome === "full") return "целиком · " + formatMinutes(line.minutes);
+  if (line.outcome === "full") return "in full · " + formatMinutes(line.minutes);
   if (line.outcome === "partial") return line.episodes + " " + seriesWord(line.episodes) + " · " + formatMinutes(line.minutes);
-  if (line.outcome === "stopped") return "не влезает";
-  return "длительность неизвестна";
+  if (line.outcome === "stopped") return "does not fit";
+  return "runtime unknown";
 }
 
 function readFree(form) {
@@ -275,16 +271,16 @@ function bindAuth(mode) {
     const username = form.username.value.trim();
     const password = form.password.value;
     if (!validName(username)) {
-      showError("Имя: от 3 до 32 символов, только буквы, цифры и подчёркивание.");
+      showError("Name: 3 to 32 characters, letters, digits, and underscore only.");
       return;
     }
     if (Array.from(password).length < 8) {
-      showError("Пароль: не короче 8 символов.");
+      showError("Password: at least 8 characters.");
       return;
     }
     const email = form.email ? form.email.value.trim() : "";
     if (mode === "register" && (!email.includes("@") || email.length < 6)) {
-      showError("Укажите адрес почты.");
+      showError("Enter an email address.");
       return;
     }
     const button = form.querySelector("button");
@@ -313,7 +309,7 @@ function bindAccountMail(user) {
     note.hidden = true;
     const email = form.email.value.trim();
     if (email !== "" && (!email.includes("@") || email.length < 6)) {
-      showError("Укажите адрес почты.");
+      showError("Enter an email address.");
       return;
     }
     const button = form.querySelector("button");
@@ -321,7 +317,7 @@ function bindAccountMail(user) {
     try {
       const data = await api("/api/me", { method: "PATCH", body: { email } });
       form.email.value = data.email || "";
-      note.textContent = data.email ? "Адрес сохранён. Письмо про четверг будет приходить сюда." : "Адрес убран.";
+      note.textContent = data.email ? "Address saved. The Thursday letter will come here." : "Address removed.";
       note.hidden = false;
     } catch (err) {
       showError(err.message);
@@ -340,14 +336,14 @@ function bindForgot() {
     notice.hidden = true;
     const email = form.email.value.trim();
     if (!email.includes("@") || email.length < 6) {
-      showError("Укажите адрес почты.");
+      showError("Enter an email address.");
       return;
     }
     const button = form.querySelector("button");
     setBusy(button, true);
     try {
       const data = await api("/api/password/forgot", { method: "POST", body: { email } });
-      notice.textContent = data.message || "Если такой адрес есть, письмо уже отправлено.";
+      notice.textContent = data.message || "If that address exists, the letter has been sent.";
       notice.hidden = false;
     } catch (err) {
       showError(err.message);
@@ -360,13 +356,13 @@ function bindForgot() {
 function bindReset() {
   const form = document.querySelector("form");
   const token = new URLSearchParams(location.search).get("token") || "";
-  if (!token) showError("Ссылка устарела. Запросите новую.");
+  if (!token) showError("This link has expired. Request a new one.");
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     clearError();
     const password = form.password.value;
     if (Array.from(password).length < 8) {
-      showError("Пароль: не короче 8 символов.");
+      showError("Password: at least 8 characters.");
       return;
     }
     const button = form.querySelector("button");
@@ -479,7 +475,7 @@ function bindSearch() {
   }
 
   manualOpen.addEventListener("click", () => {
-    showManual("Год, число серий и минуты одной серии. Фильм — это одна серия.");
+    showManual("Year, episode count, and minutes per episode. A film is one episode.");
   });
 
   manualForm.addEventListener("submit", async (event) => {
@@ -490,19 +486,19 @@ function bindSearch() {
     const episodes = readCount(manualForm.episodes.value);
     const average = readCount(manualForm.average.value);
     if (Array.from(name).length < 2 || Array.from(name).length > 120) {
-      showError("Название: от 2 до 120 символов.");
+      showError("Title: 2 to 120 characters.");
       return;
     }
     if (year == null || year < 1888 || year > 2100) {
-      showError("Год: от 1888 до 2100.");
+      showError("Year: from 1888 to 2100.");
       return;
     }
     if (episodes == null || episodes < 1 || episodes > 500) {
-      showError("Число серий: от 1 до 500.");
+      showError("Episodes: from 1 to 500.");
       return;
     }
     if (average == null || average < 1 || average > 1440) {
-      showError("Длительность серии: от 1 до 1440 минут.");
+      showError("Episode length: from 1 to 1440 minutes.");
       return;
     }
     const button = manualForm.querySelector("button");
@@ -550,7 +546,7 @@ function bindSearch() {
     const all = document.createElement("button");
     all.type = "button";
     all.className = "filter";
-    all.textContent = "Все";
+    all.textContent = "All";
     all.setAttribute("aria-pressed", "true");
     all.addEventListener("click", () => applyGenre(""));
     box.append(all);
@@ -567,7 +563,7 @@ function bindSearch() {
   function applyGenre(genre) {
     const box = document.querySelector(".filters");
     box.querySelectorAll(".filter").forEach((button) => {
-      button.setAttribute("aria-pressed", String(button.textContent === (genre || "Все")));
+      button.setAttribute("aria-pressed", String(button.textContent === (genre || "All")));
     });
     hits.querySelectorAll(".hit").forEach((hit) => {
       const list = (hit.dataset.genres || "").split(",").filter(Boolean);
@@ -578,7 +574,7 @@ function bindSearch() {
   function markQueued(button) {
     const mark = document.createElement("span");
     mark.className = "queued";
-    mark.textContent = "В очереди";
+    mark.textContent = "In the queue";
     button.replaceWith(mark);
   }
 
@@ -592,11 +588,11 @@ function bindSearch() {
       hideManual();
       if (fromSubmit) {
         hint.hidden = true;
-        showError("Введите не меньше двух символов.");
+        showError("Enter at least two characters.");
       } else {
         clearError();
         hint.hidden = false;
-        hint.textContent = "Введите название";
+        hint.textContent = "Enter a title";
       }
       return;
     }
@@ -619,7 +615,7 @@ function bindSearch() {
       });
       paintFilters(titles);
       if ((data.titles || []).length) offerManual();
-      else showManual("В каталоге такого нет. Год, число серий и минуты одной серии. Фильм — это одна серия.");
+      else showManual("Not in the catalog. Year, episode count, and minutes per episode. A film is one episode.");
     } catch (err) {
       if (token !== seq) return;
       hits.replaceChildren();
@@ -627,12 +623,12 @@ function bindSearch() {
       if (gone(err)) return;
       if (err.code === "TITLE_NOT_FOUND") {
         clearError();
-        showManual("В каталоге такого нет. Год, число серий и минуты одной серии. Фильм — это одна серия.");
+        showManual("Not in the catalog. Year, episode count, and minutes per episode. A film is one episode.");
         return;
       }
       showError(err.message);
       if (err.code === "CATALOG_UNAVAILABLE") {
-        showManual("Каталог не ответил. Карточку можно завести самим: год, число серий и минуты одной серии.");
+        showManual("The catalog did not answer. You can add your own card: year, episode count, and minutes per episode.");
       }
     } finally {
       if (token === seq && fromSubmit) setBusy(button, false);
@@ -667,7 +663,7 @@ function bindSearch() {
     hit.querySelector(".hit-main").prepend(posterNode(item));
     hit.querySelector(".hit-name").textContent = item.name;
     hit.querySelector(".hit-meta").textContent = item.assembling
-      ? (item.year ? item.year + " · " : "") + "собирается"
+      ? (item.year ? item.year + " · " : "") + "assembling"
       : item.year + " · " + kindOf(item);
     mountDetail(hit.querySelector(".fold-inner"), item, isQueued);
     return hit;
@@ -706,18 +702,18 @@ function bindQueue() {
   function summaryText(rows) {
     const minutes = rows.reduce((sum, item) => sum + (item.remainingMinutes || (known(item) ? item.episodes * item.average : 0)), 0);
     const unknown = rows.filter((item) => !known(item)).length;
-    let text = rows.length + " " + plural(rows.length, "название", "названия", "названий");
+    let text = rows.length + " " + plural(rows.length, "title", "titles");
     if (minutes > 0) text += " · " + formatMinutes(minutes);
-    if (unknown > 0) text += " · " + unknown + " без длительности";
+    if (unknown > 0) text += " · " + unknown + " with no runtime";
     const free = readFree(form);
     if (free > 0 && minutes > 0) {
       const ratio = minutes / free;
-      if (ratio < 0.5) text += " · короче одного такого вечера";
+      if (ratio < 0.5) text += " · shorter than one evening like this";
       else {
         const evenings = Math.max(1, Math.round(ratio));
         text += evenings === 1
-          ? " · около одного такого вечера"
-          : " · около " + evenings + " таких вечеров";
+          ? " · about one evening like this"
+          : " · about " + evenings + " evenings like this";
       }
     }
     return text;
@@ -729,7 +725,7 @@ function bindQueue() {
     rhythmLine.textContent = items.length ? rhythmText(items, dailyMinutes) : "";
     if (letterLine) {
       letterLine.hidden = letterText === "";
-      letterLine.textContent = letterText ? "Письмо: " + letterText : "";
+      letterLine.textContent = letterText ? "Letter: " + letterText : "";
     }
     if (picks && pickList) {
       pickList.replaceChildren();
@@ -760,19 +756,19 @@ function bindQueue() {
       if (String(item.id) === String(skipFlipId)) row.classList.add("lifting");
       row.dataset.id = item.id;
       const total = item.remainingMinutes || item.episodes * item.average;
-      const length = total > 0 ? formatMinutes(total) : (item.totalEpisodes > 0 && item.episodes === 0 ? "все серии отмечены" : "длительность неизвестна");
-      const kind = item.kind === "series" && item.seasonNumber ? "сезон " + item.seasonNumber : kindOf(item);
-      const left = item.kind === "series" && item.totalEpisodes ? " · осталось " + item.episodes + " из " + item.totalEpisodes : "";
+      const length = total > 0 ? formatMinutes(total) : (item.totalEpisodes > 0 && item.episodes === 0 ? "all episodes watched" : "runtime unknown");
+      const kind = item.kind === "series" && item.seasonNumber ? "season " + item.seasonNumber : kindOf(item);
+      const left = item.kind === "series" && item.totalEpisodes ? " · " + item.episodes + " of " + item.totalEpisodes + " left" : "";
       row.innerHTML = `
-        <button class="grip" type="button" aria-label="Перетащить"><span></span></button>
+        <button class="grip" type="button" aria-label="Drag"><span></span></button>
         <div>
           <div class="hit-name"></div>
           <div class="hit-meta"></div>
         </div>
         <div class="q-actions">
-          <button class="ghost" type="button" data-dir="up">выше</button>
-          <button class="ghost" type="button" data-dir="down">ниже</button>
-          <button class="ghost danger" type="button" data-dir="remove">убрать</button>
+          <button class="ghost" type="button" data-dir="up">higher</button>
+          <button class="ghost" type="button" data-dir="down">lower</button>
+          <button class="ghost danger" type="button" data-dir="remove">remove</button>
         </div>`;
       row.querySelector(".grip").after(posterNode(item));
       row.querySelector(".hit-name").textContent = item.name;
@@ -912,7 +908,7 @@ function bindQueue() {
   function showUndo(item, index) {
     undone = { titleId: item.titleId, seasonId: item.seasonId, index, name: item.name };
     const toast = document.querySelector(".undo");
-    toast.querySelector("p").textContent = "Убрали «" + item.name + "»";
+    toast.querySelector("p").textContent = "Removed “" + item.name + "”";
     toast.inert = false;
     toast.classList.add("show");
     clearTimeout(undoTimer);
@@ -979,16 +975,16 @@ function bindQueue() {
         rest.append(label);
       }
       track.append(rest);
-      bits.push("останется " + formatMinutes(result.leftMinutes));
+      bits.push(formatMinutes(result.leftMinutes) + " left");
     }
     bar.setAttribute("role", "img");
-    bar.setAttribute("aria-label", bits.join(", ") || "Пустое окно");
+    bar.setAttribute("aria-label", bits.join(", ") || "Empty window");
   }
 
   async function fillPlan(animateLines) {
     const time = readTime(form);
     if (!time) {
-      showError("Укажите свободное время в пределах семи суток.");
+      showError("Enter free time within seven days.");
       return;
     }
     const total = time.hours * 60 + time.minutes;
@@ -996,7 +992,7 @@ function bindQueue() {
       const result = await api("/api/plan", { method: "POST", body: time });
       clearError();
       paintBar(result, total);
-      plan.querySelector(".plan-total").textContent = "Окно: " + formatMinutes(total);
+      plan.querySelector(".plan-total").textContent = "Window: " + formatMinutes(total);
       const lines = plan.querySelector(".plan-lines");
       lines.replaceChildren();
       (result.lines || []).forEach((line, index) => {
@@ -1015,12 +1011,12 @@ function bindQueue() {
       const planLines = result.lines || [];
       const last = planLines[planLines.length - 1];
       const note = plan.querySelector(".plan-note");
-      if (!last) note.textContent = "В очереди пока нечего раскладывать по минутам.";
-      else if (result.leftMinutes === 0 && last.outcome === "full") note.textContent = "Окно заполнено.";
-      else if (result.leftMinutes === 0) note.textContent = "Окно заполнено. Дальше в это окно не берём.";
+      if (!last) note.textContent = "Nothing in the queue to lay out yet.";
+      else if (result.leftMinutes === 0 && last.outcome === "full") note.textContent = "The window is full.";
+      else if (result.leftMinutes === 0) note.textContent = "The window is full. Nothing else fits in it.";
       else if (last.outcome === "partial" || last.outcome === "stopped") {
-        note.textContent = "Останется " + formatMinutes(result.leftMinutes) + ". Дальше в это окно не берём.";
-      } else note.textContent = "Останется " + formatMinutes(result.leftMinutes) + ".";
+        note.textContent = formatMinutes(result.leftMinutes) + " left. Nothing else fits in this window.";
+      } else note.textContent = formatMinutes(result.leftMinutes) + " left.";
       plan.classList.add("open");
     } catch (err) {
       if (!gone(err)) showError(err.message);
@@ -1031,7 +1027,7 @@ function bindQueue() {
     clearTimeout(paceTimer);
     const value = readDaily(rhythmForm);
     if (value == null) {
-      rhythmLine.textContent = "Укажите от 0 до 1440 минут в день.";
+      rhythmLine.textContent = "Enter 0 to 1440 minutes a day.";
       return;
     }
     dailyMinutes = value;
@@ -1044,7 +1040,7 @@ function bindQueue() {
     clearTimeout(paceTimer);
     const value = readDaily(rhythmForm);
     if (value == null) {
-      rhythmLine.textContent = "Укажите от 0 до 1440 минут в день.";
+      rhythmLine.textContent = "Enter 0 to 1440 minutes a day.";
       return;
     }
     dailyMinutes = value;
@@ -1316,7 +1312,7 @@ function bindTitle() {
   const head = document.querySelector(".title-head");
   const seasons = document.querySelector(".seasons");
   if (!id) {
-    showError("Не удалось прочитать запрос.");
+    showError("Could not read the request.");
     return;
   }
 
@@ -1346,7 +1342,7 @@ function bindTitle() {
     if (card.assembling) {
       const note = document.createElement("p");
       note.className = "assembling";
-      note.textContent = "Собирается. Серии появятся сами.";
+      note.textContent = "Still assembling. Episodes will show up on their own.";
       copy.append(note);
       if (tries < 20) {
         tries += 1;
@@ -1370,13 +1366,13 @@ function bindTitle() {
       if (!missing) {
         const mark = document.createElement("span");
         mark.className = "queued";
-        mark.textContent = "Весь сериал в очереди";
+        mark.textContent = "The whole series is in the queue";
         row.append(mark);
       } else {
         const button = document.createElement("button");
         button.className = "primary";
         button.type = "button";
-        button.textContent = "Весь сериал в очередь";
+        button.textContent = "Add the whole series";
         button.addEventListener("click", async () => {
           clearError();
           try {
@@ -1399,7 +1395,7 @@ function bindTitle() {
       const heading = document.createElement("h2");
       const watched = (season.episodes || []).filter((episode) => episode.watched).length;
       const total = (season.episodes || []).length;
-      heading.textContent = "Сезон " + season.number + " · " + watched + " из " + total;
+      heading.textContent = "Season " + season.number + " · " + watched + " of " + total;
       const label = document.createElement("div");
       label.className = "season-label";
       if (season.poster) {
@@ -1414,17 +1410,17 @@ function bindTitle() {
       if (queuedSeasons.has(season.id)) {
         action = document.createElement("span");
         action.className = "queued";
-        action.textContent = "В очереди";
+        action.textContent = "In the queue";
       } else {
         action = document.createElement("button");
         action.className = "primary";
         action.type = "button";
-        action.textContent = "Сезон в очередь";
+        action.textContent = "Add season";
         action.addEventListener("click", async () => {
           clearError();
           try {
             await api("/api/queue", { method: "POST", body: { seasonId: season.id } });
-            action.replaceWith(Object.assign(document.createElement("span"), { className: "queued", textContent: "В очереди" }));
+            action.replaceWith(Object.assign(document.createElement("span"), { className: "queued", textContent: "In the queue" }));
           } catch (err) {
             if (gone(err)) return;
             showError(err.message);
@@ -1438,11 +1434,11 @@ function bindTitle() {
         row.className = "episode";
         const name = document.createElement("span");
         name.className = "name" + (episode.watched ? " watched" : "");
-        name.textContent = episode.number + ". " + (episode.name || "Серия") + (episode.runtime ? " · " + episode.runtime + " мин" : "");
+        name.textContent = episode.number + ". " + (episode.name || "Episode") + (episode.runtime ? " · " + episode.runtime + " min" : "");
         const mark = document.createElement("button");
         mark.className = "ghost";
         mark.type = "button";
-        mark.textContent = episode.watched ? "Смотрел" : "Не смотрел";
+        mark.textContent = episode.watched ? "Watched" : "Not watched";
         mark.addEventListener("click", async () => {
           clearError();
           try {
