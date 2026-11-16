@@ -1178,6 +1178,10 @@ func (db *DB) UserByEmail(ctx context.Context, email string) (int64, error) {
 	return id, err
 }
 
+func (db *DB) UserByAddress(ctx context.Context, email string) (User, error) {
+	return db.oneUser(ctx, `SELECT id, username, password_hash FROM users WHERE lower(email) = lower($1) AND email <> ''`, email)
+}
+
 func (db *DB) UserEmail(ctx context.Context, userID int64) (string, error) {
 	var email string
 	err := db.sql.QueryRowContext(ctx, `SELECT email FROM users WHERE id = $1`, userID).Scan(&email)

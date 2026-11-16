@@ -93,6 +93,28 @@ func TestRegisterLoginAndLogout(t *testing.T) {
 	}
 }
 
+func TestLoginByEmail(t *testing.T) {
+	svc := newService(t)
+	ctx := context.Background()
+	user, err := svc.Register(ctx, "ann", "password", "Ann@Example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, logged, err := svc.Login(ctx, " ann@example.com ", "password")
+	if err != nil || token == "" || logged.ID != user.ID || logged.Username != "ann" {
+		t.Fatalf("email login: token %q user %+v err %v", token, logged, err)
+	}
+	if _, _, err := svc.Login(ctx, "ann", "password"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Login(ctx, "missing@example.com", "password"); apperr.From(err).Code != apperr.CodeInvalidCredentials {
+		t.Fatalf("unknown email: %v", err)
+	}
+	if _, _, err := svc.Login(ctx, "ann@example.com", "wrong-password"); apperr.From(err).Code != apperr.CodeInvalidCredentials {
+		t.Fatalf("bad password: %v", err)
+	}
+}
+
 func TestUserWithoutSession(t *testing.T) {
 	svc := newService(t)
 	_, err := svc.User(context.Background(), "")

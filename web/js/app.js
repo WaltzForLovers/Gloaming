@@ -335,7 +335,16 @@ function bindAuth(mode) {
     clearError();
     const username = form.username.value.trim();
     const password = form.password.value;
-    if (!validName(username)) {
+    if (mode === "login") {
+      if (!username) {
+        showError("Enter your name or email.");
+        return;
+      }
+      if (!username.includes("@") && !validName(username)) {
+        showError("Name: 3 to 32 characters, letters, digits, and underscore only.");
+        return;
+      }
+    } else if (!validName(username)) {
       showError("Name: 3 to 32 characters, letters, digits, and underscore only.");
       return;
     }

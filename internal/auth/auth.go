@@ -173,8 +173,8 @@ func (s *Service) send(ctx context.Context, to, subject, body string) error {
 	return s.mail.Send(ctx, to, subject, body)
 }
 
-func (s *Service) Login(ctx context.Context, username, password string) (string, User, error) {
-	stored, err := s.db.UserByUsername(ctx, username)
+func (s *Service) Login(ctx context.Context, name, password string) (string, User, error) {
+	stored, err := s.account(ctx, name)
 	if errors.Is(err, storage.ErrNotFound) {
 		_ = bcrypt.CompareHashAndPassword([]byte(dummyHash), []byte(password))
 		return "", User{}, apperr.InvalidCredentials()
@@ -193,6 +193,14 @@ func (s *Service) Login(ctx context.Context, username, password string) (string,
 		return "", User{}, apperr.Internal(err)
 	}
 	return token, User{ID: stored.ID, Username: stored.Username}, nil
+}
+
+func (s *Service) account(ctx context.Context, name string) (storage.User, error) {
+	name = strings.TrimSpace(name)
+	if strings.Contains(name, "@") {
+		return s.db.UserByAddress(ctx, normalizeEmail(name))
+	}
+	return s.db.UserByUsername(ctx, name)
 }
 
 func (s *Service) Logout(ctx context.Context, token string) error {
