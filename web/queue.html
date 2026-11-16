@@ -23,25 +23,27 @@
   </header>
   <main class="page">
     <div class="queue-body">
-      <h1>Queue</h1>
-      <p class="summary"></p>
+      <section class="hero">
+        <div class="hero-main">
+          <h1 class="eyebrow">Your queue</h1>
+          <p class="hero-total"></p>
+          <p class="summary"></p>
+        </div>
+        <div class="hero-dates" hidden></div>
+      </section>
       <p class="rhythm-line"></p>
       <p class="letter" hidden></p>
       <div class="tune">
         <form class="rhythm">
           <label>Minutes a day<input name="daily" inputmode="numeric" placeholder="40" autocomplete="off"></label>
         </form>
+        <span class="tune-rule" aria-hidden="true"></span>
         <form class="time">
           <label>Hours<input name="hours" inputmode="numeric" value="1"></label>
           <label>Minutes<input name="minutes" inputmode="numeric" value="30"></label>
           <button class="primary" type="submit">Build plan</button>
         </form>
       </div>
-      <form class="account-mail">
-        <label>Email<input name="email" type="email" autocomplete="email" spellcheck="false"></label>
-        <button class="text-btn" type="submit">Save</button>
-      </form>
-      <p class="notice account-mail-note" hidden></p>
       <div class="alert"><div><p></p></div></div>
       <section class="plan">
         <div class="plan-inner">
@@ -53,11 +55,17 @@
           <p class="plan-note"></p>
         </div>
       </section>
+      <h2 class="section-title">Up next</h2>
       <ol class="queue"></ol>
       <section class="picks" hidden>
-        <h2>Similar</h2>
+        <h2 class="section-title">Similar</h2>
         <div class="pick-list"></div>
       </section>
+      <form class="account-mail">
+        <label>Letters go to<input name="email" type="email" autocomplete="email" spellcheck="false" placeholder="you@example.com"></label>
+        <button class="text-btn" type="submit">Save</button>
+      </form>
+      <p class="notice account-mail-note" hidden></p>
     </div>
     <section class="empty-gate">
       <div class="empty-card">

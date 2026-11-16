@@ -119,32 +119,33 @@ function finishOffset(remaining, daily) {
   return Math.ceil(remaining / daily) - 1;
 }
 
-function finishWhen(offset) {
-  if (offset === 0) return "today";
-  if (offset === 1) return "tomorrow";
+function finishDay(offset) {
   const date = new Date();
   date.setHours(12, 0, 0, 0);
   date.setDate(date.getDate() + offset);
-  const options = { day: "numeric", month: "long" };
-  if (date.getFullYear() !== new Date().getFullYear()) options.year = "numeric";
-  return "on " + date.toLocaleDateString("en-US", options);
+  let small = date.toLocaleDateString("en-US", { weekday: "long" });
+  if (offset === 0) return { big: "Today", small };
+  if (offset === 1) return { big: "Tomorrow", small };
+  if (date.getFullYear() !== new Date().getFullYear()) small += ", " + date.getFullYear();
+  return { big: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }), small };
 }
 
-function rhythmText(rows, daily) {
+function rhythmParts(rows, daily) {
   const current = rows.find((item) => (item.remainingMinutes || 0) > 0);
   const queueMinutes = rows.reduce((sum, item) => sum + Math.max(0, item.remainingMinutes || 0), 0);
   const unknown = rows.some((item) => (item.remainingMinutes || 0) <= 0 && (item.episodes || 0) > 0);
   if (!current) {
-    if (rows.length && rows.every((item) => (item.episodes || 0) === 0)) return "Everything in the queue is already watched.";
-    return "Nothing in the queue has a runtime to count yet.";
+    if (rows.length && rows.every((item) => (item.episodes || 0) === 0)) return { text: "Everything in the queue is already watched." };
+    return { text: "Nothing in the queue has a runtime to count yet." };
   }
-  if (daily <= 0) return "How many minutes a day do you watch? I’ll show when the current season ends and when the whole queue ends.";
-  const lines = [
-    "“" + current.name + "” ends " + finishWhen(finishOffset(current.remainingMinutes, daily)) + ".",
-    "The whole queue ends " + finishWhen(finishOffset(queueMinutes, daily)) + "."
-  ];
-  if (unknown) lines.push("Titles without a runtime are left out.");
-  return lines;
+  if (daily <= 0) return { text: "How many minutes a day do you watch? I’ll show when the current season ends and when the whole queue ends." };
+  return {
+    tiles: [
+      Object.assign({ label: "Season ends", name: current.name }, finishDay(finishOffset(current.remainingMinutes, daily))),
+      Object.assign({ label: "Queue ends", name: "at " + daily + " min a day" }, finishDay(finishOffset(queueMinutes, daily)))
+    ],
+    text: unknown ? "Titles without a runtime are left out." : ""
+  };
 }
 
 function readCount(value) {
@@ -681,6 +682,8 @@ function bindQueue() {
   const form = document.querySelector(".time");
   const rhythmForm = document.querySelector(".rhythm");
   const rhythmLine = document.querySelector(".rhythm-line");
+  const heroDates = document.querySelector(".hero-dates");
+  const heroTotal = document.querySelector(".hero-total");
   const letterLine = document.querySelector(".letter");
   const picks = document.querySelector(".picks");
   const pickList = document.querySelector(".pick-list");
@@ -703,11 +706,14 @@ function bindQueue() {
   let letterText = "";
   let suggestions = [];
 
+  function queueMinutes(rows) {
+    return rows.reduce((sum, item) => sum + (item.remainingMinutes || (known(item) ? item.episodes * item.average : 0)), 0);
+  }
+
   function summaryText(rows) {
-    const minutes = rows.reduce((sum, item) => sum + (item.remainingMinutes || (known(item) ? item.episodes * item.average : 0)), 0);
+    const minutes = queueMinutes(rows);
     const unknown = rows.filter((item) => !known(item)).length;
     let text = rows.length + " " + plural(rows.length, "title", "titles");
-    if (minutes > 0) text += " · " + formatMinutes(minutes);
     if (unknown > 0) text += " · " + unknown + " with no runtime";
     const free = readFree(form);
     if (free > 0 && minutes > 0) {
@@ -723,20 +729,45 @@ function bindQueue() {
     return text;
   }
 
-  function showRhythm(text) {
-    const lines = text == null || text === "" ? [] : (Array.isArray(text) ? text : [text]);
-    rhythmLine.replaceChildren();
-    lines.forEach((line) => {
-      const span = document.createElement("span");
-      span.textContent = line;
-      rhythmLine.append(span);
+  function showRhythm(parts) {
+    if (typeof parts === "string") parts = { text: parts };
+    const tiles = (parts && parts.tiles) || [];
+    rhythmLine.textContent = (parts && parts.text) || "";
+    heroDates.replaceChildren();
+    tiles.forEach((tile) => {
+      const box = document.createElement("div");
+      box.className = "date-tile";
+      [["date-label", tile.label], ["date-big", tile.big], ["date-small", tile.small], ["date-name", tile.name]].forEach(([cls, text]) => {
+        const line = document.createElement("span");
+        line.className = cls;
+        line.textContent = text;
+        box.append(line);
+      });
+      heroDates.append(box);
     });
+    heroDates.hidden = tiles.length === 0;
+  }
+
+  function showTotal() {
+    const minutes = queueMinutes(items);
+    heroTotal.textContent = "";
+    if (minutes <= 0) {
+      heroTotal.textContent = "No runtime yet";
+    } else {
+      formatMinutes(minutes).split(" ").forEach((part) => {
+        const span = document.createElement("span");
+        span.className = /^\d/.test(part) ? "total-num" : "total-unit";
+        span.textContent = part;
+        heroTotal.append(span);
+      });
+    }
+    summary.textContent = items.length ? summaryText(items) : "";
   }
 
   function render(skipFlipId) {
     page.classList.toggle("is-empty", items.length === 0);
-    summary.textContent = items.length ? summaryText(items) : "";
-    showRhythm(items.length ? rhythmText(items, dailyMinutes) : "");
+    showTotal();
+    showRhythm(items.length ? rhythmParts(items, dailyMinutes) : "");
     if (letterLine) {
       letterLine.hidden = letterText === "";
       letterLine.textContent = letterText ? "Letter: " + letterText : "";
@@ -1045,7 +1076,7 @@ function bindQueue() {
       return;
     }
     dailyMinutes = value;
-    showRhythm(items.length ? rhythmText(items, dailyMinutes) : "");
+    showRhythm(items.length ? rhythmParts(items, dailyMinutes) : "");
     paceTimer = setTimeout(() => savePace(value), 400);
   });
 
@@ -1058,7 +1089,7 @@ function bindQueue() {
       return;
     }
     dailyMinutes = value;
-    showRhythm(items.length ? rhythmText(items, dailyMinutes) : "");
+    showRhythm(items.length ? rhythmParts(items, dailyMinutes) : "");
     savePace(value);
   });
 
