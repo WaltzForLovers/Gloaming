@@ -45,6 +45,14 @@ func main() {
 	}
 	shows := catalog.NewHTTPClient(catalogURL)
 	films := catalog.NewWikidata("https://www.wikidata.org", "https://en.wikipedia.org")
+	animeURL := os.Getenv("GLOAMING_ANILIST")
+	if animeURL == "" {
+		animeURL = "https://graphql.anilist.co"
+	}
+	var anime *catalog.AniList
+	if animeURL != "off" {
+		anime = catalog.NewAniList(animeURL)
+	}
 	redisURL := os.Getenv("GLOAMING_REDIS")
 	if redisURL == "" {
 		redisURL = "redis://127.0.0.1:6379/0"
@@ -57,6 +65,9 @@ func main() {
 		} else {
 			shows.WithCache(cache)
 			films.WithCache(cache)
+			if anime != nil {
+				anime.WithCache(cache)
+			}
 		}
 		if lim, err := limit.Open(redisURL); err != nil {
 			log.Printf("redis limit: %v", err)
@@ -81,6 +92,9 @@ func main() {
 		sender = mail.Open(smtpAddr, from)
 	}
 	svc := catalog.New(db, shows).WithFilms(films).UseMail(sender)
+	if anime != nil {
+		svc.WithAnime(anime)
+	}
 	posterDir := os.Getenv("GLOAMING_POSTERS")
 	if posterDir == "" {
 		posterDir = "posters"

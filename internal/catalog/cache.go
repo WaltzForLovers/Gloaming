@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -71,14 +72,35 @@ func (c *redisCache) Set(ctx context.Context, key string, value []byte) {
 }
 
 func loadBody(ctx context.Context, client *http.Client, cache Cache, userAgent, endpoint string) ([]byte, int, error) {
+	return load(ctx, client, cache, userAgent, endpoint, nil)
+}
+
+func postBody(ctx context.Context, client *http.Client, cache Cache, userAgent, endpoint string, payload []byte) ([]byte, int, error) {
+	return load(ctx, client, cache, userAgent, endpoint, payload)
+}
+
+func load(ctx context.Context, client *http.Client, cache Cache, userAgent, endpoint string, payload []byte) ([]byte, int, error) {
+	key := endpoint
+	if payload != nil {
+		key += "\n" + string(payload)
+	}
 	if cache != nil {
-		if body, ok := cache.Get(ctx, endpoint); ok && len(body) > 0 {
+		if body, ok := cache.Get(ctx, key); ok && len(body) > 0 {
 			return body, http.StatusOK, nil
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	method := http.MethodGet
+	var reader io.Reader
+	if payload != nil {
+		method = http.MethodPost
+		reader = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
 	if err != nil {
 		return nil, 0, err
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", userAgent)
@@ -92,7 +114,7 @@ func loadBody(ctx context.Context, client *http.Client, cache Cache, userAgent, 
 		return nil, resp.StatusCode, err
 	}
 	if resp.StatusCode == http.StatusOK && cache != nil {
-		cache.Set(context.WithoutCancel(ctx), endpoint, body)
+		cache.Set(context.WithoutCancel(ctx), key, body)
 	}
 	return body, resp.StatusCode, nil
 }
