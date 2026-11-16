@@ -12,12 +12,14 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/WaltzForLovers/Gloaming/internal/apperr"
 	"github.com/WaltzForLovers/Gloaming/internal/auth"
 	"github.com/WaltzForLovers/Gloaming/internal/catalog"
+	"github.com/WaltzForLovers/Gloaming/internal/follow"
 	"github.com/WaltzForLovers/Gloaming/internal/plan"
 	"github.com/WaltzForLovers/Gloaming/internal/queue"
 )
@@ -28,10 +30,11 @@ const (
 )
 
 type server struct {
-	auth    *auth.Service
-	catalog *catalog.Service
-	queue   *queue.Service
-	log     *log.Logger
+	auth      *auth.Service
+	catalog   *catalog.Service
+	queue     *queue.Service
+	log       *log.Logger
+	picksFull sync.Map
 }
 
 func New(authSvc *auth.Service, catalogSvc *catalog.Service, queueSvc *queue.Service, logOut io.Writer, files fs.FS) http.Handler {
@@ -367,9 +370,17 @@ func (s *server) listQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	suggestions, err := s.catalog.Suggestions(r.Context(), user.ID)
-	if err == nil && len(suggestions) == 0 && len(items) > 0 {
-		if s.catalog.RefreshPicks(r.Context(), user.ID) == nil {
-			suggestions, err = s.catalog.Suggestions(r.Context(), user.ID)
+	if err == nil && len(items) > 0 && len(suggestions) < follow.PickLimit {
+		if _, known := s.picksFull.Load(user.ID); !known || len(suggestions) == 0 {
+			before := len(suggestions)
+			if s.catalog.RefreshPicks(r.Context(), user.ID) == nil {
+				if next, err2 := s.catalog.Suggestions(r.Context(), user.ID); err2 == nil {
+					suggestions = next
+					if before > 0 && len(next) <= before {
+						s.picksFull.Store(user.ID, struct{}{})
+					}
+				}
+			}
 		}
 	}
 	if err != nil {
@@ -446,6 +457,7 @@ func (s *server) addQueue(w http.ResponseWriter, r *http.Request) {
 			s.writeErr(w, err)
 			return
 		}
+		s.picksFull.Delete(user.ID)
 		_ = s.catalog.RefreshPicks(r.Context(), user.ID)
 		writeJSON(w, http.StatusCreated, map[string]any{"items": itemsJSON(items)})
 		return
@@ -460,6 +472,7 @@ func (s *server) addQueue(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, err)
 		return
 	}
+	s.picksFull.Delete(user.ID)
 	_ = s.catalog.RefreshPicks(r.Context(), user.ID)
 	writeJSON(w, http.StatusCreated, itemJSON(item))
 }
@@ -509,6 +522,7 @@ func (s *server) deleteQueue(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, err)
 		return
 	}
+	s.picksFull.Delete(user.ID)
 	_ = s.catalog.RefreshPicks(r.Context(), user.ID)
 	w.WriteHeader(http.StatusNoContent)
 }

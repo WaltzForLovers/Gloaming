@@ -96,6 +96,42 @@ function posterNode(item, extra) {
   return img;
 }
 
+function paintPicks(list, cards) {
+  const all = cards || [];
+  const size = 6;
+  let start = 0;
+  const more = list.parentElement && list.parentElement.querySelector(".pick-more");
+  const draw = () => {
+    list.replaceChildren();
+    all.slice(start, start + size).forEach((card) => {
+      const link = document.createElement("a");
+      link.className = "pick";
+      link.href = "title.html?id=" + (card.titleId || card.id);
+      link.append(posterNode(card, "poster-shelf"));
+      const name = document.createElement("span");
+      name.className = "pick-name";
+      name.textContent = card.name + (card.year ? " · " + card.year : "");
+      link.append(name);
+      if (card.reason) {
+        const why = document.createElement("span");
+        why.className = "pick-why";
+        why.textContent = card.reason;
+        link.append(why);
+      }
+      list.append(link);
+    });
+    if (more) more.hidden = all.length <= size;
+  };
+  if (more) {
+    more.onclick = () => {
+      start += size;
+      if (start >= all.length) start = 0;
+      draw();
+    };
+  }
+  draw();
+}
+
 function known(item) {
   return item.episodes > 0 && item.average > 0;
 }
@@ -398,24 +434,7 @@ function bindSearch() {
   const discoverList = discover.querySelector(".pick-list");
 
   function paintDiscover(cards) {
-    discoverList.replaceChildren();
-    cards.slice(0, 12).forEach((card) => {
-      const link = document.createElement("a");
-      link.className = "pick";
-      link.href = "title.html?id=" + (card.titleId || card.id);
-      link.append(posterNode(card, "poster-shelf"));
-      const name = document.createElement("span");
-      name.className = "pick-name";
-      name.textContent = card.name + (card.year ? " · " + card.year : "");
-      link.append(name);
-      if (card.reason) {
-        const why = document.createElement("span");
-        why.className = "pick-why";
-        why.textContent = card.reason;
-        link.append(why);
-      }
-      discoverList.append(link);
-    });
+    paintPicks(discoverList, cards);
     discover.hidden = discoverList.children.length === 0 || Array.from(form.q.value.trim()).length >= 2;
   }
 
@@ -809,24 +828,7 @@ function bindQueue() {
       letterLine.textContent = letterText ? "Letter: " + letterText : "";
     }
     if (picks && pickList) {
-      pickList.replaceChildren();
-      suggestions.forEach((card) => {
-        const link = document.createElement("a");
-        link.className = "pick";
-        link.href = "title.html?id=" + card.id;
-        link.append(posterNode(mapCard(card), "poster-shelf"));
-        const name = document.createElement("span");
-        name.className = "pick-name";
-        name.textContent = card.name + (card.year ? " · " + card.year : "");
-        link.append(name);
-        if (card.reason) {
-          const why = document.createElement("span");
-          why.className = "pick-why";
-          why.textContent = card.reason;
-          link.append(why);
-        }
-        pickList.append(link);
-      });
+      paintPicks(pickList, suggestions);
       picks.hidden = suggestions.length === 0;
     }
     list.replaceChildren();
