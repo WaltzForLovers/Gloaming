@@ -33,6 +33,7 @@ type Card struct {
 	Poster         string
 	Summary        string
 	Genres         []string
+	Reason         string
 	Assembling     bool
 }
 
@@ -47,6 +48,7 @@ type Show struct {
 	WikiTitle      string
 	Genres         []string
 	Summary        string
+	Rating         float64
 }
 
 type FilmClient interface {
@@ -290,6 +292,7 @@ answered:
 			Poster:         card.Poster,
 			Genres:         item.show.Genres,
 			Summary:        summary,
+			Rating:         item.show.Rating,
 		}, seeds, item.slow)
 		if err != nil {
 			return nil, apperr.Internal(err)

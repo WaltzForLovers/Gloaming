@@ -345,6 +345,11 @@ func (s *server) listQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	suggestions, err := s.catalog.Suggestions(r.Context(), user.ID)
+	if err == nil && len(suggestions) == 0 && len(items) > 0 {
+		if s.catalog.RefreshPicks(r.Context(), user.ID) == nil {
+			suggestions, err = s.catalog.Suggestions(r.Context(), user.ID)
+		}
+	}
 	if err != nil {
 		suggestions = nil
 	}
@@ -419,6 +424,7 @@ func (s *server) addQueue(w http.ResponseWriter, r *http.Request) {
 			s.writeErr(w, err)
 			return
 		}
+		_ = s.catalog.RefreshPicks(r.Context(), user.ID)
 		writeJSON(w, http.StatusCreated, map[string]any{"items": itemsJSON(items)})
 		return
 	}
@@ -432,6 +438,7 @@ func (s *server) addQueue(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, err)
 		return
 	}
+	_ = s.catalog.RefreshPicks(r.Context(), user.ID)
 	writeJSON(w, http.StatusCreated, itemJSON(item))
 }
 
@@ -480,6 +487,7 @@ func (s *server) deleteQueue(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, err)
 		return
 	}
+	_ = s.catalog.RefreshPicks(r.Context(), user.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -603,6 +611,14 @@ func cardsJSON(cards []catalog.Card) []map[string]any {
 }
 
 func cardJSON(card catalog.Card) map[string]any {
+	out := cardFields(card)
+	if card.Reason != "" {
+		out["reason"] = card.Reason
+	}
+	return out
+}
+
+func cardFields(card catalog.Card) map[string]any {
 	return map[string]any{
 		"id":             card.ID,
 		"externalId":     card.ExternalID,
