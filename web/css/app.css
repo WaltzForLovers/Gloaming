@@ -537,6 +537,16 @@ img.poster { -webkit-user-drag: none; }
   padding: 14px 16px;
   margin-bottom: 8px;
 }
+.q-poster { display: block; line-height: 0; }
+.q-open { display: block; min-width: 0; color: inherit; text-decoration: none; }
+.q-open:hover { text-decoration: none; }
+.q-open:hover .hit-name { color: var(--accent); }
+.q-open .hit-name::after {
+  content: " ›";
+  color: var(--faint);
+  transition: color var(--fast) var(--ease);
+}
+.q-open:hover .hit-name::after { color: var(--accent); }
 .q-item.unknown { opacity: 0.62; }
 .q-item.unknown .hit-name { color: var(--muted); }
 .q-item.lifting {
@@ -732,6 +742,7 @@ a.primary:hover { text-decoration: none; }
 }
 .filter[aria-pressed="true"] { color: var(--text); border-color: var(--text); }
 .hit[hidden] { display: none; }
+.season { scroll-margin-top: 24px; }
 .episode { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
 .episode .name { flex: 1; }
 .episode .watched { color: var(--muted); text-decoration: line-through; }

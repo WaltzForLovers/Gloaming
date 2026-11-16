@@ -806,16 +806,23 @@ function bindQueue() {
       const left = item.kind === "series" && item.totalEpisodes ? " · " + item.episodes + " of " + item.totalEpisodes + " left" : "";
       row.innerHTML = `
         <button class="grip" type="button" aria-label="Drag"><span></span></button>
-        <div>
+        <a class="q-open">
           <div class="hit-name"></div>
           <div class="hit-meta"></div>
-        </div>
+        </a>
         <div class="q-actions">
           <button class="ghost" type="button" data-dir="up">higher</button>
           <button class="ghost" type="button" data-dir="down">lower</button>
           <button class="ghost danger" type="button" data-dir="remove">remove</button>
         </div>`;
-      row.querySelector(".grip").after(posterNode(item));
+      const href = "title.html?id=" + item.titleId + (item.seasonNumber ? "&season=" + item.seasonNumber : "");
+      const posterLink = document.createElement("a");
+      posterLink.className = "q-poster";
+      posterLink.href = href;
+      posterLink.tabIndex = -1;
+      posterLink.append(posterNode(item));
+      row.querySelector(".grip").after(posterLink);
+      row.querySelector(".q-open").href = href;
       row.querySelector(".hit-name").textContent = item.name;
       row.querySelector(".hit-meta").textContent = (index + 1) + " · " + kind + " · " + length + left;
       row.querySelector('[data-dir="up"]').disabled = index === 0;
@@ -1435,6 +1442,7 @@ function bindTitle() {
     seasonList.forEach((season) => {
       const block = document.createElement("section");
       block.className = "season";
+      block.id = "season-" + season.number;
       const bar = document.createElement("div");
       bar.className = "season-head";
       const heading = document.createElement("h2");
@@ -1500,7 +1508,10 @@ function bindTitle() {
     });
   }
 
-  load().catch((err) => {
+  load().then(() => {
+    const target = params.get("season") && document.getElementById("season-" + params.get("season"));
+    if (target) target.scrollIntoView({ block: "start" });
+  }).catch((err) => {
     if (!gone(err)) showError(err.message);
   });
 }
