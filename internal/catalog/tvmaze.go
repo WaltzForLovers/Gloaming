@@ -126,13 +126,14 @@ func (c *HTTPClient) get(ctx context.Context, endpoint string, dest any) error {
 }
 
 type showJSON struct {
-	ID             int      `json:"id"`
-	Name           string   `json:"name"`
-	Premiered      *string  `json:"premiered"`
-	Runtime        *int     `json:"runtime"`
-	AverageRuntime *int     `json:"averageRuntime"`
-	Genres         []string `json:"genres"`
-	Summary        *string  `json:"summary"`
+	ID             int        `json:"id"`
+	Name           string     `json:"name"`
+	Premiered      *string    `json:"premiered"`
+	Runtime        *int       `json:"runtime"`
+	AverageRuntime *int       `json:"averageRuntime"`
+	Genres         []string   `json:"genres"`
+	Summary        *string    `json:"summary"`
+	Rating         ratingJSON `json:"rating"`
 	Image          *struct {
 		Medium string `json:"medium"`
 	} `json:"image"`
@@ -156,18 +157,31 @@ func (s showJSON) toShow() Show {
 		show.Summary = plainText(*s.Summary)
 	}
 	show.Genres = s.Genres
+	show.Rating = s.Rating.value()
 	return show
 }
 
-func (c *HTTPClient) Genres(ctx context.Context, showID int) ([]string, error) {
+func (c *HTTPClient) Genres(ctx context.Context, showID int) ([]string, float64, error) {
 	var payload struct {
-		Genres []string `json:"genres"`
+		Genres []string   `json:"genres"`
+		Rating ratingJSON `json:"rating"`
 	}
 	endpoint := fmt.Sprintf("%s/shows/%d", c.baseURL, showID)
 	if err := c.get(ctx, endpoint, &payload); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return payload.Genres, nil
+	return payload.Genres, payload.Rating.value(), nil
+}
+
+type ratingJSON struct {
+	Average *float64 `json:"average"`
+}
+
+func (r ratingJSON) value() float64 {
+	if r.Average == nil {
+		return 0
+	}
+	return *r.Average
 }
 
 func yearOf(premiered string) int {

@@ -735,8 +735,19 @@ function bindQueue() {
       pickList.replaceChildren();
       suggestions.forEach((card) => {
         const link = document.createElement("a");
+        link.className = "pick";
         link.href = "title.html?id=" + card.id;
-        link.textContent = card.name + (card.year ? " · " + card.year : "");
+        link.append(posterNode(mapCard(card), "poster-shelf"));
+        const name = document.createElement("span");
+        name.className = "pick-name";
+        name.textContent = card.name + (card.year ? " · " + card.year : "");
+        link.append(name);
+        if (card.reason) {
+          const why = document.createElement("span");
+          why.className = "pick-why";
+          why.textContent = card.reason;
+          link.append(why);
+        }
         pickList.append(link);
       });
       picks.hidden = suggestions.length === 0;

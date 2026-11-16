@@ -12,7 +12,7 @@ import (
 )
 
 type genreSource interface {
-	Genres(ctx context.Context, showID int) ([]string, error)
+	Genres(ctx context.Context, showID int) ([]string, float64, error)
 }
 
 func (s *Service) afterWatch(ctx context.Context, userID, episodeID int64, on bool) {
@@ -70,9 +70,14 @@ func (s *Service) copyPosters(ctx context.Context, userID int64) {
 	if err != nil {
 		return
 	}
-	for _, title := range picks {
-		_ = s.keepPoster(ctx, title.ID)
+	for _, pick := range picks {
+		_ = s.keepPoster(ctx, pick.Title.ID)
 	}
+}
+
+// RefreshPicks recomputes the genre picks after the queue itself changes.
+func (s *Service) RefreshPicks(ctx context.Context, userID int64) error {
+	return follow.Refresh(ctx, s.db, userID)
 }
 
 func (s *Service) HandleWatched(ctx context.Context, value []byte) error {
@@ -95,16 +100,17 @@ func (s *Service) HandleCard(ctx context.Context, value []byte) error {
 }
 
 func (s *Service) Suggestions(ctx context.Context, userID int64) ([]Card, error) {
-	titles, err := s.db.Suggestions(ctx, userID)
+	picks, err := s.db.Suggestions(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	cards := make([]Card, len(titles))
-	for i, title := range titles {
+	cards := make([]Card, len(picks))
+	for i, pick := range picks {
+		title := pick.Title
 		cards[i] = Card{
 			ID: title.ID, ExternalID: title.ExternalID, Name: title.Name, Year: title.Year,
 			EpisodeCount: title.EpisodeCount, AverageMinutes: title.AverageMinutes,
-			Kind: KindOf(title.EpisodeCount), Poster: title.Poster,
+			Kind: KindOf(title.EpisodeCount), Poster: title.Poster, Reason: pick.Reason,
 		}
 	}
 	return cards, nil
@@ -146,11 +152,11 @@ func (s *Service) fillGenres(ctx context.Context, userID int64) {
 	}
 	for _, title := range pending {
 		gctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		genres, err := source.Genres(gctx, title.ExternalID)
+		genres, rating, err := source.Genres(gctx, title.ExternalID)
 		cancel()
 		if err != nil || len(genres) == 0 {
 			continue
 		}
-		_ = s.db.SetGenres(ctx, title.ID, genres)
+		_ = s.db.SetGenres(ctx, title.ID, genres, rating)
 	}
 }

@@ -55,7 +55,7 @@ func TestApplyWatchedKeepsThursdayLetterAndSuggestions(t *testing.T) {
 		t.Fatalf("%q %d %v", mark, offset, err)
 	}
 	picks, err := svc.Suggestions(ctx, user.ID)
-	if err != nil || len(picks) != 1 || picks[0].Name != "Neighbor" {
+	if err != nil || len(picks) != 1 || picks[0].Name != "Neighbor" || picks[0].Reason != "Как «Queued»: Drama" {
 		t.Fatalf("%v %+v", err, picks)
 	}
 	if err := svc.ApplyWatched(ctx, user.ID, thursday.AddDate(0, 0, 1)); err != nil {
@@ -64,6 +64,62 @@ func TestApplyWatchedKeepsThursdayLetterAndSuggestions(t *testing.T) {
 	letter, err = svc.Letter(ctx, user.ID)
 	if err != nil || letter != "" {
 		t.Fatalf("cleared %q %v", letter, err)
+	}
+}
+
+func TestRefreshPicksFollowsTheQueue(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	user, err := db.CreateUser(ctx, "ann", "hash", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	crime, err := db.UpsertTitle(ctx, storage.Title{
+		ExternalID: 1, Name: "Crime One", Year: 2001, EpisodeCount: 1, AverageMinutes: 40, Genres: []string{"Crime", "Drama"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	space, err := db.UpsertTitle(ctx, storage.Title{
+		ExternalID: 2, Name: "Space One", Year: 2002, EpisodeCount: 1, AverageMinutes: 40, Genres: []string{"Science-Fiction", "Adventure"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, title := range []storage.Title{
+		{ExternalID: 3, Name: "Crime Two", Genres: []string{"Crime", "Drama"}},
+		{ExternalID: 4, Name: "Space Two", Genres: []string{"Science-Fiction", "Adventure"}},
+	} {
+		title.Year, title.EpisodeCount, title.AverageMinutes = 2003+i, 1, 40
+		if _, err := db.UpsertTitle(ctx, title); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := New(db, &fakeClient{})
+	q := queue.New(db)
+	item, err := q.Add(ctx, user.ID, crime.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RefreshPicks(ctx, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	picks, err := svc.Suggestions(ctx, user.ID)
+	if err != nil || len(picks) != 1 || picks[0].Name != "Crime Two" {
+		t.Fatalf("%v %+v", err, picks)
+	}
+	if err := q.Remove(ctx, user.ID, item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.Add(ctx, user.ID, space.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RefreshPicks(ctx, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	picks, err = svc.Suggestions(ctx, user.ID)
+	if err != nil || len(picks) != 1 || picks[0].Name != "Space Two" {
+		t.Fatalf("after swap %v %+v", err, picks)
 	}
 }
 
